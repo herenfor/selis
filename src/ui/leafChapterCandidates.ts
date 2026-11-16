@@ -30,14 +30,14 @@ function visibleTextLength(node: XmlNodeLike): number {
   return total;
 }
 
-/** 整图章沿用原图片双页判断；文字章：有字、字少、最多一张图、无表格、无长列表。 */
+/** 整图章沿用原图片双页判断；文字章：有字、字少、最多两张图、无表格、无长列表。 */
 export function isLeafChapterCandidate(body: Parameters<typeof isImageChapterLeaf>[0]): boolean {
   if (isImageChapterLeaf(body)) return true;
   const chars = visibleTextLength(body);
   // 空章走原来的自动前进，不参与配对。
   if (chars === 0 || chars > LEAF_TEXT_MAX_CHARS) return false;
   const media = MEDIA.reduce((count, tag) => count + findElements(body, tag).length, 0);
-  if (media > 1) return false;
+  if (media > 2) return false;
   if (findElements(body, "table").length > 0) return false;
   return findElements(body, "li").length <= LEAF_LIST_MAX_ITEMS;
 }

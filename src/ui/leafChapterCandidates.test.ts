@@ -21,7 +21,7 @@ function fixture(bodies: string[], nonLinear = -1, version = 2) {
 }
 
 describe("A13 leaf chapter candidates (XHTML only)", () => {
-  it("accepts picture pages and short text pages, rejects long, empty and composed ones", async () => {
+  it("accepts picture pages and short text pages, rejects long, empty and media-heavy ones", async () => {
     const { classify, signal } = fixture([
       html(`<div><img src="a.png"/></div>`), // 整图章
       html(`<h1>书名</h1><p>作者　著</p>`), // 书名页
@@ -29,14 +29,15 @@ describe("A13 leaf chapter candidates (XHTML only)", () => {
       html(`<p>${text(LEAF_TEXT_MAX_CHARS)}</p>`), // 正好到上限
       html(`<p>${text(LEAF_TEXT_MAX_CHARS + 1)}</p>`), // 超过上限：正文
       html(`<p>  \n </p>`), // 空章：走原来的自动前进
-      html(`<img src="a.png"/><img src="b.png"/><p>两张图</p>`),
+      html(`<img src="a.png"/><img src="b.png"/><p>两张图</p>`), // 两图书名页（真实书常见）
       html(`<table><tr><td>人物</td></tr></table>`),
       html(`<ol>${"<li>一项</li>".repeat(13)}</ol>`), // 长目录
       html(`<style>p{color:red}</style><script>var x = "${text(2000)}";</script><p>献辞</p>`), // 脚本和样式不算字
+      html(`<img src="a.png"/><img src="b.png"/><img src="c.png"/><p>三张图</p>`), // 超过新的两张上限
     ]);
     const results = [];
-    for (let i = 0; i < 10; i++) results.push(await classify(i, signal));
-    expect(results).toEqual([true, true, true, true, false, false, false, false, false, true]);
+    for (let i = 0; i < 11; i++) results.push(await classify(i, signal));
+    expect(results).toEqual([true, true, true, true, false, false, true, false, false, true, false]);
   });
 
   it("reads each chapter once, skips linear=no, and does not cache a cancelled read", async () => {
@@ -64,5 +65,18 @@ describe("A13 leaf chapter candidates (XHTML only)", () => {
     expect(await spreads.resolve(3, signal)).toEqual({ left: 2, right: 3 });
     expect(await spreads.resolve(4, signal)).toEqual({ left: 4, right: null });
     expect(await spreads.resolve(5, signal)).toBeNull();
+  });
+
+  it("pairs a two-image title page with the cover (real book shape)", async () => {
+    const { book, classify, signal } = fixture([
+      html(`<img src="cover.jpg"/>`), // 封面
+      html(`<img src="t1.webp"/><img src="t2.webp"/><p>作者　緒二葉</p>`), // 书名图 + 卷号图
+      html(`<p>${text(300)}</p>`), // 简介
+      html(`<p>${text(5000)}</p>`), // 正文
+    ]);
+    const spreads = new SingleLeafSpreads(book, classify);
+    expect(await spreads.resolve(0, signal)).toEqual({ left: 0, right: 1 });
+    expect(await spreads.resolve(2, signal)).toEqual({ left: 2, right: null });
+    expect(await spreads.resolve(3, signal)).toBeNull();
   });
 });
