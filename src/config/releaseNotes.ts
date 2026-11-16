@@ -35,6 +35,17 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.3",
+    status: "released",
+    releasedOn: "2026-11-16",
+    items: [
+      {
+        category: "fixed",
+        text: "修复跨页复制问题（机排书本暂未适配，将在下个版本尝试修复）。",
+      },
+    ],
+  },
+  {
     version: "0.4.2",
     status: "released",
     releasedOn: "2026-11-13",
