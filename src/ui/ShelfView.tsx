@@ -61,6 +61,7 @@ import {
   type SearchStatus,
 } from "./SearchPanel";
 import "./shelfZen.css";
+import "./shelfDrag.css";
 import { ShelfFolderAddBooksDialog } from "./ShelfFolderAddBooksDialog";
 import { useAppUpdateDot } from "./appUpdate/appUpdateStore";
 import { useCloudSyncAttention } from "./cloudSync/cloudSyncStore";
