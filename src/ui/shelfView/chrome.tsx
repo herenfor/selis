@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { formatListKey } from "../bookFormatText";
 import { MENU_CLOSE_MS, useExitPresence } from "../menuMotion";
 import { useUiText } from "../localization/UiLanguageProvider";
@@ -338,9 +339,10 @@ export function ShelfEmptyState(props: { icon: ReactNode; title: string; hint: s
  * 极简下拉选择组件
  * ========================================================================= */
 
-interface ShelfSelectOption {
+export interface ShelfSelectOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 export function ShelfSelect(props: ShelfSubmenuBackProps & {
@@ -348,11 +350,18 @@ export function ShelfSelect(props: ShelfSubmenuBackProps & {
   options: ShelfSelectOption[];
   onChange(value: string): void;
   title?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  className?: string;
   busy?: boolean;
+  portal?: boolean;
+  align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [portalStyle, setPortalStyle] = useState<{ style: CSSProperties; openUp: boolean } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
 
   const closeDropdown = useCallback(() => {
@@ -366,6 +375,39 @@ export function ShelfSelect(props: ShelfSubmenuBackProps & {
   }, [open, closing]);
 
   useShelfSubmenuBack(open, closeDropdown, props);
+
+  const updatePortalPosition = useCallback(() => {
+    if (!props.portal || !ref.current || typeof window === "undefined") {
+      setPortalStyle(null);
+      return;
+    }
+    const rect = ref.current.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      setPortalStyle(null);
+      return;
+    }
+    const margin = 12;
+    const minWidth = Math.max(140, Math.round(rect.width));
+    const maxWidth = Math.min(360, Math.max(180, window.innerWidth - margin * 2));
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - margin);
+    const spaceAbove = Math.max(0, rect.top - margin);
+    const estHeight = Math.min(280, Math.max(48, props.options.length * 34 + 10));
+    const openUp = spaceBelow < estHeight && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, Math.min(280, openUp ? spaceAbove : spaceBelow));
+    const preferRight = props.align === "right" || rect.left + minWidth > window.innerWidth - margin;
+    const style: CSSProperties = {
+      minWidth: `${minWidth}px`,
+      maxWidth: `${maxWidth}px`,
+      maxHeight: `${Math.round(maxHeight)}px`,
+      ...(preferRight
+        ? { right: `${Math.max(margin, Math.round(window.innerWidth - rect.right))}px`, left: "auto" }
+        : { left: `${Math.max(margin, Math.round(rect.left))}px`, right: "auto" }),
+      ...(openUp
+        ? { bottom: `${Math.max(margin, Math.round(window.innerHeight - rect.top + 5))}px`, top: "auto", transformOrigin: "bottom center" }
+        : { top: `${Math.round(rect.bottom + 5)}px`, bottom: "auto", transformOrigin: "top center" }),
+    };
+    setPortalStyle({ style, openUp });
+  }, [props.portal, props.align, props.options.length]);
 
   const toggleDropdown = useCallback(() => {
     if (closing) return;
@@ -381,24 +423,46 @@ export function ShelfSelect(props: ShelfSubmenuBackProps & {
     }
   }, [open, closing, closeDropdown]);
 
+  useLayoutEffect(() => {
+    if (!props.portal || (!open && !closing)) return;
+    updatePortalPosition();
+  }, [props.portal, open, closing, updatePortalPosition]);
+
   useEffect(() => {
     if (!open || closing) return;
     const onDown = (e: PointerEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) closeDropdown();
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (!ref.current?.contains(target) && !popRef.current?.contains(target)) closeDropdown();
     };
-    // Capture and claim Escape so a dialog around the dropdown (folder modal) stays open.
+    // Capture and claim Escape so a dialog around the dropdown stays open.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
       e.preventDefault();
+      e.stopPropagation();
       closeDropdown();
+    };
+    const onScroll = (e: Event): void => {
+      if (!props.portal) return;
+      const target = e.target as Node | null;
+      if (target && popRef.current?.contains(target)) return;
+      updatePortalPosition();
     };
     window.addEventListener("pointerdown", onDown);
     window.addEventListener("keydown", onKey, true);
+    if (props.portal) {
+      window.addEventListener("scroll", onScroll, true);
+      window.addEventListener("resize", updatePortalPosition);
+    }
     return () => {
       window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("keydown", onKey, true);
+      if (props.portal) {
+        window.removeEventListener("scroll", onScroll, true);
+        window.removeEventListener("resize", updatePortalPosition);
+      }
     };
-  }, [open, closing, closeDropdown]);
+  }, [open, closing, closeDropdown, props.portal, updatePortalPosition]);
 
   useEffect(() => {
     return () => {
@@ -406,43 +470,61 @@ export function ShelfSelect(props: ShelfSubmenuBackProps & {
     };
   }, []);
 
-  const current = props.options.find((o) => o.value === props.value) ?? props.options[0];
+  const matched = props.options.find((o) => o.value === props.value);
+  const label = matched?.label ?? props.placeholder ?? props.options[0]?.label ?? "";
+  const isPlaceholder = !matched && props.placeholder !== undefined;
+  const wrapClass = `shelf-select-wrap${props.className ? ` ${props.className}` : ""}`;
+
+  const popNode = (open || closing) ? (
+    <div
+      ref={popRef}
+      className={`shelf-select-pop${props.portal && portalStyle ? " is-portal" : ""}${portalStyle?.openUp ? " is-up" : ""}${closing ? " closing" : ""}`}
+      role="listbox"
+      style={props.portal ? portalStyle?.style : undefined}
+    >
+      {props.options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={`shelf-select-option${o.value === props.value ? " selected" : ""}`}
+          role="option"
+          aria-selected={o.value === props.value}
+          disabled={o.disabled}
+          onClick={() => {
+            props.onChange(o.value);
+            closeDropdown();
+          }}
+        >
+          <span>{o.label}</span>
+          {o.value === props.value ? (
+            <span className="shelf-select-check">
+              <CheckIcon />
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  const portalHost = props.portal && typeof document !== "undefined"
+    ? ((ref.current?.closest(".app") as HTMLElement | null) ?? document.body)
+    : null;
 
   return (
-    <div className="shelf-select-wrap" ref={ref}>
+    <div className={wrapClass} ref={ref}>
       <button
-        className={`shelf-select-btn${open && !closing ? " open" : ""}`}
+        type="button"
+        className={`shelf-select-btn${open && !closing ? " open" : ""}${isPlaceholder ? " is-placeholder" : ""}`}
         title={props.title}
+        aria-label={props.ariaLabel}
         disabled={props.busy}
         aria-expanded={open && !closing}
         onClick={toggleDropdown}
       >
-        <span>{current.label}</span>
+        <span>{label}</span>
         <span className="shelf-select-arrow" aria-hidden="true" />
       </button>
-      {(open || closing) && (
-        <div className={`shelf-select-pop${closing ? " closing" : ""}`} role="listbox">
-          {props.options.map((o) => (
-            <button
-              key={o.value}
-              className={`shelf-select-option${o.value === props.value ? " selected" : ""}`}
-              role="option"
-              aria-selected={o.value === props.value}
-              onClick={() => {
-                props.onChange(o.value);
-                closeDropdown();
-              }}
-            >
-              <span>{o.label}</span>
-              {o.value === props.value ? (
-                <span className="shelf-select-check">
-                  <CheckIcon />
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      )}
+      {popNode && (portalHost ? createPortal(popNode, portalHost) : popNode)}
     </div>
   );
 }

@@ -90,3 +90,43 @@ it("原生桥只在有选择时发送 copyToLibrary；不可用的自选位置�
   expect(libraryCopyChoice({ ...view, copyOnImport: false, customBaseDirectory: null, available: false, error: "损坏" })).toBeUndefined();
   expect(libraryCopyChoice(null)).toBeUndefined();
 });
+
+it("ER-0206: 预览页下拉全部采用统一 ShelfSelect，不再使用原生 select", async () => {
+  const port: DirectoryImportPort = {
+    scan: async () => ({ jobId: "j2", root: { sourceRootKey: "k", name: "测试" }, inputCount: 1, skippedDirectoryCount: 0, unreadableDirectoryCount: 0 }),
+    page: async () => ({
+      items: [{ inputId: "i1", relativeParentSegments: ["子集"], fileName: "a.epub" }],
+      bindings: [],
+      nextCursor: null,
+    }),
+    start: vi.fn<DirectoryImportPort["start"]>(async ({ jobId }) => ({ jobId, status: "completed", counts: zeroCounts, issueCount: 0 })),
+    issues: async () => ({ items: [], nextCursor: null }),
+    cancel: async () => "already-finished",
+    dispose: async () => {},
+  };
+  const dom = createReactDomHarness();
+  try {
+    await dom.render(createElement(FolderImportPanel, {
+      port,
+      organization: emptyOrganization(),
+      autoScan: true,
+      copyToLibrary: true,
+      onSettled: () => {},
+      onClose: () => {},
+    }));
+    for (let i = 0; i < 3; i++) await dom.run(async () => { await flushAsync(); });
+
+    expect(dom.container.querySelectorAll("select")).toHaveLength(0);
+    const triggers = [...dom.container.querySelectorAll<HTMLButtonElement>(".shelf-select-btn")];
+    expect(triggers.length).toBeGreaterThanOrEqual(3);
+
+    await dom.click(triggers[0]);
+    const options = [...dom.container.ownerDocument.querySelectorAll<HTMLButtonElement>(".shelf-select-pop .shelf-select-option")];
+    const flatOption = options.find((opt) => opt.textContent?.includes("不自动分类"));
+    expect(flatOption).toBeTruthy();
+    await dom.click(flatOption!);
+    expect(triggers[0].textContent).toContain("不自动分类");
+  } finally {
+    await dom.dispose();
+  }
+});

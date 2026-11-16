@@ -24,6 +24,7 @@ import { FolderImportJobOwner } from "./jobOwner";
 import "../saveFileDialogs.css";
 import "./folderImportPanel.css";
 import { FolderIcon } from "../shelfView/icons";
+import { ShelfSelect } from "../shelfView/chrome";
 import { uiText, useUiText } from "../localization/UiLanguageProvider";
 import type { PlainMessageKey } from "../localization/core";
 
@@ -519,41 +520,50 @@ export function FolderImportPanel(props: FolderImportPanelProps) {
               </small>
             </div>
             <div className="folder-import-opts">
-              <label className="folder-import-opt">
+              <div className="folder-import-opt">
                 <span>{t("folderImport.grouping")}</span>
-                <select
+                <ShelfSelect
+                  portal
+                  ariaLabel={t("folderImport.grouping")}
                   value={options.grouping}
-                  onChange={(event) => setOptions({ ...options, grouping: event.target.value as typeof options.grouping })}
-                >
-                  <option value="auto">{t("folderImport.grouping.auto")}</option>
-                  <option value="singleFolder">{t("folderImport.grouping.single", { name: rootName })}</option>
-                  <option value="none">{t("folderImport.grouping.none")}</option>
-                </select>
-              </label>
+                  options={[
+                    { value: "auto", label: t("folderImport.grouping.auto") },
+                    { value: "singleFolder", label: t("folderImport.grouping.single", { name: rootName }) },
+                    { value: "none", label: t("folderImport.grouping.none") },
+                  ]}
+                  onChange={(value) => setOptions({ ...options, grouping: value as typeof options.grouping })}
+                />
+              </div>
               {options.grouping === "auto" && hasLooseAndCategories && (
-                <label className="folder-import-opt">
+                <div className="folder-import-opt">
                   <span>{t("folderImport.loose", { name: rootName })}</span>
-                  <select
+                  <ShelfSelect
+                    portal
+                    ariaLabel={t("folderImport.loose", { name: rootName })}
                     value={options.looseRootBooks}
-                    onChange={(event) => setOptions({ ...options, looseRootBooks: event.target.value as typeof options.looseRootBooks })}
-                  >
-                    <option value="namedFolder">{t("folderImport.loose.namedFolder", { name: rootName })}</option>
-                    <option value="root">{t("folderImport.loose.unclassified")}</option>
-                  </select>
-                </label>
+                    options={[
+                      { value: "namedFolder", label: t("folderImport.loose.namedFolder", { name: rootName }) },
+                      { value: "root", label: t("folderImport.loose.unclassified") },
+                    ]}
+                    onChange={(value) => setOptions({ ...options, looseRootBooks: value as typeof options.looseRootBooks })}
+                  />
+                </div>
               )}
               {options.grouping !== "none" && (
-                <label className="folder-import-opt">
+                <div className="folder-import-opt">
                   <span>{t("folderImport.existing")}</span>
-                  <select
+                  <ShelfSelect
+                    portal
+                    ariaLabel={t("folderImport.existing")}
                     value={options.existingPlacement}
-                    onChange={(event) => setOptions({ ...options, existingPlacement: event.target.value as typeof options.existingPlacement })}
-                  >
-                    <option value="fillUnclassified">{t("folderImport.existing.fill")}</option>
-                    <option value="preserveAll">{t("folderImport.existing.preserve")}</option>
-                    <option value="replace">{t("folderImport.existing.replace")}</option>
-                  </select>
-                </label>
+                    options={[
+                      { value: "fillUnclassified", label: t("folderImport.existing.fill") },
+                      { value: "preserveAll", label: t("folderImport.existing.preserve") },
+                      { value: "replace", label: t("folderImport.existing.replace") },
+                    ]}
+                    onChange={(value) => setOptions({ ...options, existingPlacement: value as typeof options.existingPlacement })}
+                  />
+                </div>
               )}
               {copyToLibrary !== undefined && (
                 <label className="folder-import-opt is-check folder-import-copy" title={t("folderImport.copy.hint")}>
@@ -629,23 +639,26 @@ export function FolderImportPanel(props: FolderImportPanelProps) {
                             })}
                           </span>
                         </span>
-                        <select
-                          className="folder-import-target"
-                          aria-label={t("folderImport.groupTarget", { name: group.suggestedName })}
-                          value={value}
-                          onChange={(event) => setChoice(group.groupKey, event.target.value)}
-                        >
-                          {!choice && <option value="" disabled>{t("folderImport.choose")}</option>}
-                          {candidates.map((folder) => (
-                            <option key={folder.folderId} value={folder.folderId}>{folderLabel(folder)}</option>
-                          ))}
-                          <option value="__create">
-                            {resolution.kind === "create" ? t("folderImport.create", { name: createName }) : t("folderImport.createSameName", { name: createName })}
-                          </option>
-                          {others.map((folder) => (
-                            <option key={folder.folderId} value={folder.folderId}>{folderLabel(folder)}</option>
-                          ))}
-                        </select>
+                        <div className="folder-import-target">
+                          <ShelfSelect
+                            portal
+                            align="right"
+                            ariaLabel={t("folderImport.groupTarget", { name: group.suggestedName })}
+                            value={value}
+                            placeholder={!choice ? t("folderImport.choose") : undefined}
+                            options={[
+                              ...candidates.map((folder) => ({ value: folder.folderId, label: folderLabel(folder) })),
+                              {
+                                value: "__create",
+                                label: resolution.kind === "create"
+                                  ? t("folderImport.create", { name: createName })
+                                  : t("folderImport.createSameName", { name: createName }),
+                              },
+                              ...others.map((folder) => ({ value: folder.folderId, label: folderLabel(folder) })),
+                            ]}
+                            onChange={(nextValue) => setChoice(group.groupKey, nextValue)}
+                          />
+                        </div>
                       </li>
                     );
                   })}
