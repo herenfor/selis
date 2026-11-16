@@ -4406,12 +4406,7 @@ select option {
   flex-direction: column;
 }
 
-/* 悬停文件夹时缩成小卡并让到指尖右下，手指下的文件夹名不被拖动卡遮住。 */
-.shelf-drag-ghost.is-over-folder {
-  transform: translate(16px, 32px) rotate(4deg) scale(0.5);
-  transform-origin: top left;
-  transition: transform var(--motion-fast, 140ms) var(--ease-standard, ease);
-}
+/* 悬停落点时由目标卡片自己显示预览与胶囊，跟手小卡整体让开，避免盖住提示。 */
 
 .shelf-drag-ghost-cover {
   flex: 1;
@@ -4437,48 +4432,96 @@ select option {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.shelf-card.drag-over-book {
-  outline: 2px dashed var(--accent);
-  outline-offset: 4px;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25), 0 12px 28px rgba(0, 0, 0, 0.18);
-  transform: scale(1.03);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+/* 拖动落点：书（新建文件夹）与文件夹（放入）共用同一套高亮语言。
+ * 高亮落在封面上（书封 / 文件夹正面），卡片本身抬到背景模糊层之上。 */
+.shelf-card.is-drop-target {
+  position: relative;
+  z-index: 50 !important;
 }
 
-.shelf-card-folder-sim-overlay {
+/* 命中落点时收起卡片自己的操作按钮：它们和提示层同为 z-index 6，
+ * 指针悬停时被 hover 规则拉回不透明，会压住高亮描边与胶囊。 */
+.shelf-card.is-drop-target .shelf-card-actions-wrap,
+.shelf-card.is-drop-target .shelf-card-more-btn,
+.shelf-card.is-drop-target .shelf-card-star-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shelf-card:not(.shelf-folder-card).is-drop-target .shelf-cover-box,
+.shelf-folder-card.is-drop-target .shelf-folder-face {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--shelf-card-bg) 80%, var(--accent) 15%);
+  box-shadow:
+    0 0 0 3px var(--accent),
+    0 16px 34px color-mix(in srgb, var(--accent) 34%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 20%, transparent);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.shelf-card:not(.shelf-folder-card).is-drop-target .shelf-cover-box {
+  transform: translateY(-2px) scale(1.03);
+}
+
+.shelf-folder-card.is-drop-target .shelf-folder-cover-box {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.shelf-folder-card.is-drop-target .shelf-folder-mosaic-cell {
+  transform: scale(1.04);
+}
+
+/* 文件夹背后的两层纸边也要跟着染色，否则高亮时露出一块白色矩形。 */
+.shelf-folder-card.is-drop-target .shelf-folder-sheet {
+  background: color-mix(in srgb, var(--shelf-card-bg) 62%, var(--accent) 28%);
+  border-color: var(--accent);
+}
+
+.shelf-folder-card.is-drop-target .shelf-folder-sheet-back {
+  background: color-mix(in srgb, var(--shelf-card-bg) 74%, var(--accent) 20%);
+}
+
+/* 卡片里的放置提示：同一层强调色、同一个胶囊；书额外预览合并后的两层封面。 */
+.shelf-drop-overlay {
   position: absolute;
   inset: 0;
-  border-radius: var(--r-md);
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--accent) 26%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 11%, transparent) 100%
+  );
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 6;
-  color: #fff;
-  padding: 8px;
-  text-align: center;
   pointer-events: none;
   animation: shelf-fade-in 0.2s ease;
 }
 
-.shelf-folder-sim-pill {
+.shelf-drop-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  max-width: calc(100% - 12px);
+  padding: 5px 12px;
   border-radius: var(--r-full);
   background: var(--accent);
   color: #fff;
   font-size: var(--fs-caption);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  animation: shelf-bounce 0.7s infinite alternate cubic-bezier(0.45, 0, 0.55, 1);
 }
 
-.shelf-folder-sim-mosaic {
+.shelf-drop-pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shelf-drop-mosaic {
   display: flex;
   margin-top: 10px;
   position: relative;
@@ -4488,86 +4531,35 @@ select option {
   align-items: center;
 }
 
-.shelf-folder-sim-thumb {
+.shelf-drop-thumb {
   width: 30px;
   height: 42px;
   border-radius: var(--r-xs);
   border: 1.5px solid #fff;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   background: #222;
   position: absolute;
 }
 
-.shelf-folder-sim-thumb.primary {
+.shelf-drop-thumb.primary {
   transform: translateX(-10px) rotate(-6deg);
   z-index: 1;
 }
 
-.shelf-folder-sim-thumb.incoming {
+.shelf-drop-thumb.incoming {
   transform: translateX(10px) rotate(6deg);
   z-index: 2;
 }
 
-/* 目标文件夹响应态：提升至高斯模糊层之上，保持整体卡片透明无方框，仅封套微打开放大与圆润发光 */
-.shelf-folder-card.is-drop-target {
-  position: relative;
-  z-index: 50 !important;
-}
-
-.shelf-folder-card.is-drop-target .shelf-folder-cover-box {
-  transform: scale(1.09);
-}
-
-.shelf-folder-card.is-drop-target .shelf-folder-face {
-  border-radius: var(--r-xl);
-  border-color: var(--accent);
-  box-shadow:
-    0 0 0 3.5px var(--accent),
-    0 16px 36px rgba(59, 130, 246, 0.38),
-    0 0 24px rgba(59, 130, 246, 0.22);
-  background: color-mix(in srgb, var(--shelf-card-bg) 80%, var(--accent) 15%);
-}
-
-.shelf-folder-card.is-drop-target .shelf-folder-mosaic-cell {
-  transform: scale(1.04);
-}
-
-.shelf-folder-drop-overlay {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--r-xl);
-  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.28) 0%, rgba(59, 130, 246, 0.12) 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 6;
-  pointer-events: none;
-  animation: shelf-fade-in 0.2s ease;
-}
-
-.shelf-folder-drop-badge {
-  background: var(--accent);
-  color: #fff;
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: var(--r-full);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-  animation: shelf-bounce 0.7s infinite alternate cubic-bezier(0.45, 0, 0.55, 1);
-}
-
-/* 拖拽移至文件夹时的全景高斯模糊背景层（手机文件夹拟物交互） */
-.shelf-folder-drop-backdrop {
+/* 拖拽落在任一目标上时的全景背景层：书与文件夹同一处理，只压暗不遮住书架 */
+.shelf-drop-backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-ui-inline);
-  background: rgba(15, 23, 42, 0.38);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   pointer-events: none;
   opacity: 0;
   animation: shelf-fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;

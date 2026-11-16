@@ -3352,9 +3352,9 @@ export function ShelfView(props: ShelfViewProps) {
         </div>
       )}
 
-      {/* 拖拽悬停至文件夹时的高斯模糊背景层（手机文件夹拟物全景模糊） */}
-      {dropTarget?.type === "folder" && (
-        <div className="shelf-folder-drop-backdrop" aria-hidden="true" />
+      {/* 拖拽悬停到任一落点时的全景模糊背景层：书与文件夹同一处理 */}
+      {dropTarget && (
+        <div className="shelf-drop-backdrop" aria-hidden="true" />
       )}
 
       {/* 拖拽跟随时显示的半透明微缩封面浮层 */}
@@ -3380,9 +3380,9 @@ export function ShelfView(props: ShelfViewProps) {
         </div>
       )}
 
-      {draggedEntry && dragCoord && (
+      {draggedEntry && dragCoord && !dropTarget && (
         <div
-          className={`shelf-drag-ghost${dropTarget?.type === "folder" ? " is-over-folder" : ""}`}
+          className="shelf-drag-ghost"
           style={{
             left: `${dragCoord.x}px`,
             top: `${dragCoord.y}px`,

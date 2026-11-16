@@ -248,7 +248,7 @@ export const ShelfCard = memo(function ShelfCard(props: ShelfCardProps) {
 
   return (
     <div
-      className={`shelf-card${props.selected ? " selected" : ""}${entry.available === false ? " unavailable" : ""}${props.isDragging ? " is-dragging" : ""}${props.isDropTargetBook ? " drag-over-book" : ""}${props.menuOpen ? " menu-open" : ""}`}
+      className={`shelf-card${props.selected ? " selected" : ""}${entry.available === false ? " unavailable" : ""}${props.isDragging ? " is-dragging" : ""}${props.isDropTargetBook ? " drag-over-book is-drop-target" : ""}${props.menuOpen ? " menu-open" : ""}`}
       role="button"
       tabIndex={0}
       data-shelf-target="book"
@@ -278,19 +278,19 @@ export const ShelfCard = memo(function ShelfCard(props: ShelfCardProps) {
       <div className="shelf-cover-box">
         <Cover entry={entry} provider={props.provider} />
 
-        {/* 模拟创建文件夹的交互预览态 */}
+        {/* 落点提示：与文件夹同一套胶囊，另附合并后的两层封面预览 */}
         {props.isDropTargetBook && (
-          <div className="shelf-card-folder-sim-overlay" aria-hidden="true">
-            <div className="shelf-folder-sim-pill">
+          <div className="shelf-drop-overlay" aria-hidden="true">
+            <div className="shelf-drop-pill">
               <FolderIcon />
               <span>{t("shelf.card.dropToCreateFolder")}</span>
             </div>
-            <div className="shelf-folder-sim-mosaic">
-              <div className="shelf-folder-sim-thumb primary">
+            <div className="shelf-drop-mosaic">
+              <div className="shelf-drop-thumb primary">
                 <Cover entry={entry} provider={props.provider} />
               </div>
               {props.draggedEntry && (
-                <div className="shelf-folder-sim-thumb incoming">
+                <div className="shelf-drop-thumb incoming">
                   <Cover entry={props.draggedEntry} provider={props.provider} />
                 </div>
               )}
@@ -484,14 +484,6 @@ export const ShelfFolderCard = memo(function ShelfFolderCard(props: ShelfFolderC
             {mixed && <span className="shelf-card-checkbox-dash" />}
           </div>
         )}
-        {props.isDropTarget && (
-          <div className="shelf-folder-drop-overlay" aria-hidden="true">
-            <div className="shelf-folder-drop-badge">
-              <PlusIcon />
-              <span>{t("shelfFolder.card.drop")}</span>
-            </div>
-          </div>
-        )}
         {/* 叠层外形：上沿露出两层纸边，封面固定四格；样子不随里面有几本变化。 */}
         <span className="shelf-folder-sheet shelf-folder-sheet-back" aria-hidden="true" />
         <span className="shelf-folder-sheet" aria-hidden="true" />
@@ -506,6 +498,15 @@ export const ShelfFolderCard = memo(function ShelfFolderCard(props: ShelfFolderC
               );
             })}
           </div>
+          {/* 与书卡同一套落点提示：高亮落在正面，胶囊居中 */}
+          {props.isDropTarget && (
+            <div className="shelf-drop-overlay" aria-hidden="true">
+              <div className="shelf-drop-pill">
+                <PlusIcon />
+                <span>{t("shelfFolder.card.drop")}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {!props.selectionMode && props.onRequestMenu && (
