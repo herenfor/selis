@@ -450,6 +450,34 @@ describe("sanitizeChapter", () => {
     expect(out).toContain("height: 100% !important");
   });
 
+  it("SVG 封面同时写 xlink:href 与 SVG2 裸 href 时两者都改写", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>封面</title></head>
+<body><div style="height:100vh;text-align:center;padding:0;margin:0">
+<svg xmlns="http://www.w3.org/2000/svg" height="100%" preserveAspectRatio="xMidYMid meet" version="1.1"
+  viewBox="0 0 1024 1536" width="100%" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <image width="1024" height="1536" xlink:href="../Images/cover.png" href="../Images/cover.png"/>
+</svg></div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts("OEBPS/Text/cover.xhtml"));
+    const image = out.match(/<image\b[^>]*>/)?.[0] ?? "";
+
+    expect(image).toContain('xlink:href="blob:test/OEBPS/Images/cover.png"');
+    // SVG2 优先使用裸 href；只改写 xlink 时浏览器会去加载没改写的相对路径。
+    expect(image).toMatch(/(?:^|\s)href="blob:test\/OEBPS\/Images\/cover\.png"/);
+    expect(image).not.toContain("../Images/cover.png");
+  });
+
+  it("只写 SVG2 裸 href 的 SVG 封面也会改写到资源", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>封面</title></head>
+<body><div><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1536" width="100%" height="100%">
+  <image width="1024" height="1536" href="../Images/cover2.png"/>
+</svg></div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts("OEBPS/Text/cover.xhtml"));
+    const image = out.match(/<image\b[^>]*>/)?.[0] ?? "";
+
+    expect(image).toMatch(/(?:^|\s)href="blob:test\/OEBPS\/Images\/cover2\.png"/);
+    expect(image).not.toContain("../Images/cover2.png");
+  });
+
   it("只包一张图的 SVG 写了 preserveAspectRatio=none 时改为等比，不在细长页框里拉伸封面", async () => {
     const page = (inner: string) => `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>封面</title></head>
 <body><div><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1"

@@ -398,7 +398,7 @@ export async function sanitizeChapter(
         el.removeAttribute(attr.name);
         continue;
       }
-      if (name === "src" || name === "poster" || name === "data" || name === "xlink:href" || (opts.archiveReferences && name === "href" && (tag === "image" || tag === "use"))) {
+      if (name === "src" || name === "poster" || name === "data" || name === "xlink:href" || (name === "href" && (tag === "image" || tag === "use"))) {
         if (name === "src" && isPlaybackSource(el)) {
           playbackHref = attr.value;
           el.removeAttribute(attr.name);

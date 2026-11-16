@@ -123,7 +123,7 @@ function imageRequestFromSvgImage(imageEl: Element, chapterPath: string): ImageV
   const elementChildren = Array.from(svg.children ?? []).filter((child) => child.nodeType === 1);
   if (elementChildren.length !== 1 || elementChildren[0] !== imageEl) return null;
 
-  // sanitize 会把 xlink:href 改写成 blob URL；SVG2 裸 href 不会被资源改写，仅作回退。
+  // sanitize 会把 xlink:href 与 SVG2 裸 href 都改写成 blob URL；优先取 xlink，裸 href 作回退。
   const src = (imageEl.getAttribute("xlink:href") || imageEl.getAttribute("href") || "").trim();
   if (!src) return null;
   const size = svgIntrinsicSizes.get(imageEl) ?? svgImageSize(imageEl, svg);
