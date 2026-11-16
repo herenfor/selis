@@ -1,5 +1,5 @@
 import type { ChapterPaginatorOptions } from "../render/paginator";
-import { act, createElement, createRef, type ComponentProps } from "react";
+import { act, createElement, createRef, StrictMode, type ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, type ReaderSettings } from "../render/settings";
 import type { Book } from "../core/types";
@@ -702,6 +702,45 @@ describe("ReaderView preload settings lifecycle", () => {
     // 普通 ready / display-ready 页号变化不会重新推断成用户提交。
     await finish(active);
     expect(onUserReadingPositionChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("StrictMode 双重挂载下，携带 startAtEnd 进入新挂载分页视图仍定位到章末", async () => {
+    props = {
+      ...props,
+      spineIndex: 3,
+      startAtEnd: { nonce: 1, atEnd: true },
+      settings: { ...props.settings, preloadNextChapter: false },
+    };
+    await dom.render(createElement(StrictMode, null, createElement(ReaderView, props)));
+    const live = instances.filter((p) => !p.disposed);
+    expect(live).toHaveLength(1);
+    expect(live[0].loadOptions.startAtEnd).toBe(true);
+  });
+
+  it("backward trackChain/landTrack keeps the landed chapter at its prepared last page", async () => {
+    const handle = createRef<ReaderHandle>();
+    props = {
+      ...props,
+      spineIndex: 1,
+      settings: { ...props.settings, columnsPerView: 1, turnAnimation: "slide", seamlessChapterTurn: true, preloadNextChapter: true },
+    };
+    await dom.render(createElement(ReaderView, { ...props, ref: handle }));
+    const active = instances[0];
+    await finish(active);
+    const next = instances.find((p) => p.path === "2.xhtml")!;
+    await finish(next);
+    const prev = instances.find((p) => p.path === "0.xhtml")!;
+    await finish(prev);
+    prev.pageCount = 3;
+    prev.setPage(2);
+    await act(async () => { prev.finish(); });
+
+    let landed: boolean | undefined;
+    await act(async () => {
+      landed = handle.current?.landTrack?.(0);
+    });
+    expect(landed).toBe(true);
+    expect(prev.currentPage).toBe(2);
   });
 
 });

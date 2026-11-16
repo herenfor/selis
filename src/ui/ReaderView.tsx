@@ -71,6 +71,11 @@ import { planFrontRun } from "./frontRunPlan";
 import { canJoinChapters, chapterFillLayoutKey, joinLaneClip, type JoinLeaves } from "./chapterJoin";
 import { PAGED_LAYER, planPresentationLayers, planSeamTrack, standbyReaderProps, type PagedLayerKey, type PresentationLayer, type PresentationPlan } from "./presentationStack";
 import {
+  adoptNavigationNonces,
+  beginChapterLoadNonces,
+  createInitialNavigationNonceState,
+} from "./chapterNavigationNonce";
+import {
   animateValue,
   dragScrollLeft,
   prefersReducedMotion,
@@ -811,8 +816,10 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   livePreviewRef.current = props.livePreview === true;
   /** Hidden page, or a typography drag: no neighbor preload or warm-up starts. */
   const backgroundHeld = (): boolean => backgroundPausedRef.current || livePreviewRef.current;
-  /** 显式目录/搜索/书签/历史跳转必须使用自身入口锚点，不得误命中相邻缓存。 */
-  const handledAnchorNonceRef = useRef(props.anchorNonce);
+  /** 显式目录/搜索/书签/历史跳转与章末定位序号管理，独立追踪未提交回滚。 */
+  const navigationNonceRef = useRef(
+    createInitialNavigationNonceState(props.startAtEnd, props.anchorNonce),
+  );
   const spineIndexRef = useRef(spineIndex);
   const autoAdvanceRef = useRef(false);
   const outerScrollWheelRef = useRef(new WheelTurnAccumulator(160));
@@ -883,7 +890,6 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     outerScrollWheelRef.current.reset();
     paginatorRef.current?.resetWheelAccumulator?.();
   };
-  const lastHandledStartAtEndNonceRef = useRef<number | null>(props.startAtEnd.atEnd ? null : props.startAtEnd.nonce);
   const lastStateRef = useRef<string>("loading");
   const lastReadyEmptyRef = useRef(false);
   const turnIntentRef = useRef(new TurnIntentBuffer());
@@ -1990,8 +1996,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     lockedReverseDirRef.current = atEnd ? 1 : -1;
     reverseLockUntilRef.current = Date.now() + 250;
     turnIntentRef.current.reset();
-    if (joinLanded) {
-      // 停在穿越落定的那一屏。
+    if (joinLanded || trackLanded) {
+      // 停在穿越/轨道落定的那一屏。
     } else if (atEnd) {
       if (latestRenderSettingsRef.current.readingMode === "scroll") {
         next.paginator.scrollToEnd();
@@ -2566,8 +2572,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     if (adopted && adopted.spineIndex === spineIndex && adopted.anchorNonce === props.anchorNonce &&
       adopted.startNonce === props.startAtEnd.nonce && shown?.paginator && shown.spineIndex === spineIndex &&
       shown.path === path && shown.ready && shown.state.status === "ready" && !props.preciseTarget) {
-      lastHandledStartAtEndNonceRef.current = props.startAtEnd.nonce;
-      handledAnchorNonceRef.current = props.anchorNonce;
+      adoptNavigationNonces(navigationNonceRef.current, props.startAtEnd.nonce, props.anchorNonce);
       turnIntentRef.current.reset();
       const state = shown.paginator.getStateSnapshot();
       if (state.status === "ready") {
@@ -2582,16 +2587,13 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     }
     const navigation = chapterNavigationRef.current;
     let abandoned = false;
+    const nonces = beginChapterLoadNonces(navigationNonceRef.current, {
+      startAtEnd: props.startAtEnd,
+      anchorNonce: props.anchorNonce,
+    });
     const isCurrentNavigation = (): boolean => !abandoned && navigation === chapterNavigationRef.current;
     void (async () => {
-      // 跨章/兼容重载是显式章节跳转：回到开头或页内锚点，
-      // 而不是沿用旧页号与旧阅读锚点。回翻上一章时把 atEnd 交给 paginator：
-      // 由它“翻到最后一页后再显示”，避免先闪第一页。
-      const isNewRequest = props.startAtEnd.nonce !== lastHandledStartAtEndNonceRef.current;
-      lastHandledStartAtEndNonceRef.current = props.startAtEnd.nonce;
-      const startAtEnd = isNewRequest ? props.startAtEnd.atEnd : false;
-      const explicitNavigation = handledAnchorNonceRef.current !== props.anchorNonce;
-      handledAnchorNonceRef.current = props.anchorNonce;
+      const { startAtEnd, explicitNavigation } = nonces;
       if (explicitNavigation) {
         lockedReverseDirRef.current = 0;
         reverseLockUntilRef.current = 0;
@@ -2615,7 +2617,10 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
         endJoinMotion();
       }
       if (!preciseTarget && !explicitNavigation) {
-        if (promotePreparedChapter(path, spineIndex, startAtEnd)) return;
+        if (promotePreparedChapter(path, spineIndex, startAtEnd)) {
+          nonces.commit();
+          return;
+        }
         const inFlight = spareSlotsRef.current.find(
           (slot) => slot.path === path && slot.spineIndex === spineIndex && slot.paginator
         );
@@ -2632,7 +2637,10 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
           const ready = await inFlight.paginator.waitForDisplayReady();
           if (!isCurrentNavigation()) return;
           if (ready && activeSlotRef.current?.spineIndex !== spineIndex) {
-            if (promotePreparedChapter(path, spineIndex, startAtEnd)) return;
+            if (promotePreparedChapter(path, spineIndex, startAtEnd)) {
+              nonces.commit();
+              return;
+            }
           }
         }
       }
@@ -2700,18 +2708,24 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
             }
           : null,
       });
-      if (isCurrentNavigation() && activeSlotRef.current === activeSlot && paginatorRef.current === p) {
-        const latest = latestRenderSettingsRef.current;
-        if (activeSlotRef.current.renderSettings.theme !== latest.theme && sameLayoutSettings(activeSlotRef.current.renderSettings, latest)) {
-          if (p.updateTheme(latest.theme)) {
-            activeSlotRef.current.renderSettings = { ...activeSlotRef.current.renderSettings, theme: latest.theme };
-            const surface = activeIframeRef.current;
-            paintHandleRef.current?.setSurfaceBackground(surface ? readerSurfaceBackground(surface) : null);
+      if (isCurrentNavigation()) {
+        nonces.commit();
+        if (activeSlotRef.current === activeSlot && paginatorRef.current === p) {
+          const latest = latestRenderSettingsRef.current;
+          if (activeSlotRef.current.renderSettings.theme !== latest.theme && sameLayoutSettings(activeSlotRef.current.renderSettings, latest)) {
+            if (p.updateTheme(latest.theme)) {
+              activeSlotRef.current.renderSettings = { ...activeSlotRef.current.renderSettings, theme: latest.theme };
+              const surface = activeIframeRef.current;
+              paintHandleRef.current?.setSurfaceBackground(surface ? readerSurfaceBackground(surface) : null);
+            }
           }
         }
       }
     })();
-    return () => { abandoned = true; };
+    return () => {
+      abandoned = true;
+      nonces.rollbackIfUncommitted();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- A navigation owns this load; settings updates are handled by the reload transaction.
   }, [book, spineIndex, props.anchorNonce, props.startAtEnd.nonce]);
 

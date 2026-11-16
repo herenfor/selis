@@ -1820,6 +1820,7 @@ export class ChapterPaginator {
       this.setPage(Math.max(0, this.metrics.pageCount - 1));
     }
     this.prepareMotion();
+    if (atEnd && !this.scrollMode) this.flushReadingAnchor();
     this.syncExpectedPagedScroll();
     return true;
   }
