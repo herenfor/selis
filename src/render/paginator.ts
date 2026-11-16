@@ -61,8 +61,12 @@ import { installPlainTap } from "./plainTap";
 import type { PlainTapInfo, PlainTapPoint } from "./plainTap";
 import { clientXToColumnX, columnForContentPoint, commitSpreadPosition, createSpreadGeometry, createSpreadLayout, bookmarkPageFrames, laneForColumn, occupiedColumns, spreadForColumn, spreadStart, visibleColumnInterval, visibleLeafRange } from "./pagedSpread";
 import type { BookmarkPageFrame, PagedViewportPort, SpreadGeometry, SpreadLayout } from "./pagedSpread";
-import { installPageBackgroundLanes } from "./pageBackgroundLanes";
-import type { PageBackgroundLanes } from "./pageBackgroundLanes";
+import {
+  releasePageBackgroundSlot,
+  resolveStationarySpreadOrigin,
+  syncDualPageBackground,
+  type PageBackgroundSlot,
+} from "./pageBackgroundLanes";
 import { imageRequestFromTarget, isImageBlankAtPoint, prepareImageHitAreas } from "./imageActivation";
 import { columnAtPoint, containingFragmentAtPoint } from "./fragmentGeometry";
 import type { FragmentSpace } from "./fragmentGeometry";
@@ -103,7 +107,7 @@ export class ChapterPaginator {
   private centeredTitleFix: CenteredTitleFix | null = null;
   private contentDoc: Document | null = null;
   /** A12：本文档双页时的分页背景层；lanes 为 null 表示书没有整页背景图。 */
-  private pageBackground: { doc: Document; lanes: PageBackgroundLanes | null } | null = null;
+  private pageBackground: PageBackgroundSlot | null = null;
   private step = 0;
   private pageWidth = 0;
   /** 本次布局的分栏几何（B 的 computePagedGeometry 结果）。 */
@@ -1122,6 +1126,7 @@ export class ChapterPaginator {
       motion.driver.write(motion.driver.read().position);
     }
     if (!touchContact) motion.lease.settled();
+    this.syncPageBackgroundSafe();
   }
 
   /** iframe 和宿主留白的手势都必须配对结束（含 touchcancel）。 */
@@ -1135,6 +1140,7 @@ export class ChapterPaginator {
     if (!motion || !motion.driver.active || motion.session.state.kind !== "idle") return;
     motion.driver.settleTo(motion.driver.read().position);
     this.syncExpectedPagedScroll();
+    this.syncPageBackgroundSafe();
   }
 
   /** 当前布局的运动会话；前提不满足时返回 null（宿主走旧路径）。 */
@@ -1292,6 +1298,7 @@ export class ChapterPaginator {
     if (this.pageMotionLivePage !== null) this.adoptedPageUncommitted = true;
     this.pageMotionLivePage = null;
     this.metrics.currentPage = readSnapPosition(this.nativeSnapOffsets(), position)?.page ?? this.metrics.currentPage;
+    this.syncPageBackgroundSafe();
   }
 
   private disposePageMotion(): void {
@@ -6592,16 +6599,19 @@ export class ChapterPaginator {
       !layout.empty && visibleColumnInterval(layout, page, 0) !== null,
       !layout.empty && visibleColumnInterval(layout, page, 1) !== null,
     ];
-    const geometry = layout.geometry;
     const position = this.readVisualPosition();
     const scroll = this.readPagedScroll();
-    const rtl = this.flowProgression === "rtl";
-    const firstStart = this.contentClientOrigin() + pageAxisSign(this.flowProgression) * ((position?.snapLeft ?? scroll) - scroll);
-    // LTR：firstStart 是第一栏左缘；RTL：是第一栏右缘，整屏向左展开。
-    const contentLeft = rtl
-      ? firstStart - (geometry.columns - 1) * geometry.columnStep - geometry.columnWidth
-      : firstStart;
-    return { contentLeft, rtl, geometry, present };
+    const geometry = layout.geometry;
+    const origin = resolveStationarySpreadOrigin({
+      contentOrigin: this.contentClientOrigin(),
+      progression: this.flowProgression,
+      visualOffset: position?.snapLeft ?? scroll,
+      scrollOffset: scroll,
+      columns: geometry.columns,
+      columnWidth: geometry.columnWidth,
+      columnStep: geometry.columnStep,
+    });
+    return { ...origin, geometry, present };
   }
 
   /**
@@ -7734,44 +7744,31 @@ export class ChapterPaginator {
   }
 
   private releasePageBackground(): void {
-    this.pageBackground?.lanes?.dispose();
-    this.pageBackground = null;
+    this.pageBackground = releasePageBackgroundSlot(this.pageBackground);
   }
 
-  /**
-   * A12：双页分页时，书的整页背景图改由左右两个显示层按页铺，有正文的页才铺。
-   * 只读已提交的布局与页号，不参与分页；单页/滚动/固定版式恢复原样。
-   */
-  private syncPageBackground(): void {
-    const doc = this.contentDoc;
-    const viewer = this.viewer;
-    const layout = this.spreadLayout;
-    if (this.pageBackground && this.pageBackground.doc !== doc) this.releasePageBackground();
-    if (!doc || !viewer || !layout || this.scrollMode || this.fixedLayout || layout.geometry.columns !== 2) {
-      this.releasePageBackground();
-      return;
+  private syncPageBackgroundSafe(targetPage?: number): void {
+    try {
+      this.pageBackground = syncDualPageBackground(this.pageBackground, {
+        doc: this.contentDoc,
+        viewer: this.viewer,
+        layout: this.spreadLayout,
+        disabled: this.scrollMode || this.fixedLayout,
+        page: targetPage ?? this.metrics.currentPage,
+        progression: this.flowProgression,
+        contentOrigin: () => this.contentClientOrigin(),
+        visualOffset: this.visualOffset(),
+        scrollOffset: this.readPagedScroll(),
+      });
+    } catch {
+      // 背景层只影响观感；读不到几何时保持上一状态，不拦截阅读状态。
     }
-    if (!this.pageBackground) this.pageBackground = { doc, lanes: installPageBackgroundLanes(doc) };
-    const lanes = this.pageBackground.lanes;
-    if (!lanes) return;
-    const page = this.metrics.currentPage;
-    const first = !layout.empty && visibleColumnInterval(layout, page, 0) !== null;
-    const second = !layout.empty && visibleColumnInterval(layout, page, 1) !== null;
-    const rect = viewer.getBoundingClientRect();
-    const paddingLeft = parseFloat(doc.defaultView?.getComputedStyle(viewer).paddingLeft ?? "") || 0;
-    // viewer 内容盒正好是“两栏 + 栏距”，中线就是两页分界，与翻页方向无关。
-    const splitX = rect.left + (viewer.clientLeft || 0) + paddingLeft + layout.geometry.viewportWidth / 2;
-    const rtl = this.flowProgression === "rtl";
-    lanes.update({ splitX, leftFilled: rtl ? second : first, rightFilled: rtl ? first : second });
   }
 
   private emit(s: ChapterState): void {
     this.mediaPlayback?.stopIfOutsideViewport();
-    try {
-      this.syncPageBackground();
-    } catch {
-      // 背景层只影响观感；读不到几何时保持上一状态，不拦截阅读状态。
-    }
+    const targetPage = s.status === "ready" && typeof s.currentPage === "number" ? s.currentPage : undefined;
+    this.syncPageBackgroundSafe(targetPage);
     this.lastState = s;
     if (!this.disposed) this.onState(s);
   }

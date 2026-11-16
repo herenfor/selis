@@ -11,9 +11,92 @@
  * 单页、滚动和固定版式不需要，由调用方 dispose 恢复原样。
  */
 
+import { pageAxisSign, type PageProgression } from "./pagedDirection";
+import { visibleColumnInterval, type SpreadLayout } from "./pagedSpread";
+
 export const PAGE_BACKGROUND_LANE_TAG = "epub-page-background";
 /** 背景图已被搬走的根元素；深色主题对比度修补仍应把它当作有背景图。 */
 export const PAGE_BACKGROUND_SOURCE_ATTR = "data-reader-page-background-moved";
+
+export interface StationarySpreadOrigin {
+  readonly contentLeft: number;
+  readonly rtl: boolean;
+}
+
+/**
+ * 按指定逻辑偏移把 viewer 视口原点还原为正文首栏左缘。
+ * 合成层窗口模式下 viewer 被加宽并设负 margin-left + transform，须用偏移差抵消。
+ */
+export function resolveStationarySpreadOrigin(input: {
+  readonly contentOrigin: number;
+  readonly progression: PageProgression;
+  readonly visualOffset: number;
+  readonly scrollOffset: number;
+  readonly columns: 1 | 2;
+  readonly columnWidth: number;
+  readonly columnStep: number;
+}): StationarySpreadOrigin {
+  const scroll = Number.isFinite(input.scrollOffset) ? input.scrollOffset : 0;
+  const visual = Number.isFinite(input.visualOffset) ? input.visualOffset : scroll;
+  const rtl = input.progression === "rtl";
+  const firstStart = input.contentOrigin + pageAxisSign(input.progression) * (visual - scroll);
+  // LTR：firstStart 是第一栏左缘；RTL：是第一栏右缘，整屏向左展开。
+  const contentLeft = rtl
+    ? firstStart - (input.columns - 1) * input.columnStep - input.columnWidth
+    : firstStart;
+  return { contentLeft, rtl };
+}
+
+export interface PageBackgroundSlot {
+  readonly doc: Document;
+  readonly lanes: PageBackgroundLanes | null;
+}
+
+export function releasePageBackgroundSlot(slot: PageBackgroundSlot | null): null {
+  slot?.lanes?.dispose();
+  return null;
+}
+
+export function syncDualPageBackground(
+  current: PageBackgroundSlot | null,
+  input: {
+    readonly doc: Document | null;
+    readonly viewer: HTMLElement | null;
+    readonly layout: SpreadLayout | null;
+    readonly disabled: boolean;
+    readonly page: number;
+    readonly progression: PageProgression;
+    readonly contentOrigin: () => number;
+    readonly visualOffset: number;
+    readonly scrollOffset: number;
+  },
+): PageBackgroundSlot | null {
+  const { doc, viewer, layout } = input;
+  let slot = current;
+  if (slot && slot.doc !== doc) slot = releasePageBackgroundSlot(slot);
+  if (!doc || !viewer || !layout || input.disabled || layout.geometry.columns !== 2) {
+    return releasePageBackgroundSlot(slot);
+  }
+  if (!slot) slot = { doc, lanes: installPageBackgroundLanes(doc) };
+  const lanes = slot.lanes;
+  if (!lanes) return slot;
+  const geometry = layout.geometry;
+  const origin = resolveStationarySpreadOrigin({
+    contentOrigin: input.contentOrigin(),
+    progression: input.progression,
+    visualOffset: input.visualOffset,
+    scrollOffset: input.scrollOffset,
+    columns: geometry.columns,
+    columnWidth: geometry.columnWidth,
+    columnStep: geometry.columnStep,
+  });
+  const splitX = origin.contentLeft + (geometry.columnWidth + geometry.columnStep) / 2;
+  if (!Number.isFinite(splitX)) return slot;
+  const first = !layout.empty && visibleColumnInterval(layout, input.page, 0) !== null;
+  const second = !layout.empty && visibleColumnInterval(layout, input.page, 1) !== null;
+  lanes.update({ splitX, leftFilled: origin.rtl ? second : first, rightFilled: origin.rtl ? first : second });
+  return slot;
+}
 
 const COPIED_PROPERTIES = [
   "background-image",
@@ -98,6 +181,7 @@ export function installPageBackgroundLanes(doc: Document): PageBackgroundLanes |
   return {
     doc,
     update({ splitX, leftFilled, rightFilled }) {
+      if (!Number.isFinite(splitX)) return;
       const key = `${splitX}|${leftFilled}|${rightFilled}`;
       if (key === last) return;
       last = key;
