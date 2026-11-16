@@ -46,6 +46,7 @@
   "shelfFolder.filter.none": "沒有匹配項",
   "shelfFolder.filter.limited": "僅顯示前 {count} 項，請搜尋以縮小範圍",
   "shelfFolder.select": "選擇資料夾 {name} 中的全部書",
+  "shelfFolder.selectEmpty": "選擇空資料夾 {name}",
   "shelfFolder.select.empty": "資料夾裡沒有書，無法選擇",
   "shelfFolder.importHere": "匯入新書",
   "shelfFolder.importHere.tip": "選擇 EPUB 檔案，匯入到這個資料夾",

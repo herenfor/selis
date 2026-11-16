@@ -434,6 +434,9 @@ export const ShelfFolderCard = memo(function ShelfFolderCard(props: ShelfFolderC
   });
 
   const selectable = props.selectionState !== undefined && props.selectionState !== "empty";
+  const selectLabel = props.books.length === 0
+    ? t("shelfFolder.selectEmpty", { name: props.name })
+    : t("shelfFolder.select", { name: props.name });
   const handleCardClick = (): void => {
     if (!props.selectionMode) props.onOpen(props.id, cardRef.current);
     else if (selectable) props.onToggleSelected?.(props.id);
@@ -450,7 +453,7 @@ export const ShelfFolderCard = memo(function ShelfFolderCard(props: ShelfFolderC
       role={props.selectionMode ? "checkbox" : "button"}
       aria-checked={props.selectionMode ? (mixed ? "mixed" : checked) : undefined}
       aria-disabled={props.selectionMode && !selectable ? true : undefined}
-      aria-label={props.selectionMode ? t("shelfFolder.select", { name: props.name }) : undefined}
+      aria-label={props.selectionMode ? selectLabel : undefined}
       tabIndex={0}
       data-shelf-target="folder"
       data-folder-id={props.id}
@@ -473,8 +476,8 @@ export const ShelfFolderCard = memo(function ShelfFolderCard(props: ShelfFolderC
           handleCardClick();
         }
       }}
-      title={props.selectionMode && !selectable
-        ? t("shelfFolder.select.empty")
+      title={props.selectionMode
+        ? (selectable ? selectLabel : t("shelfFolder.select.empty"))
         : tn("shelfFolder.card.tip", props.books.length, { name: props.name, count: props.books.length })}
     >
       <div className="shelf-cover-box shelf-folder-cover-box">

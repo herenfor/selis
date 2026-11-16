@@ -495,7 +495,10 @@ export const ShelfFolderTableRow = memo(function ShelfFolderTableRow(props: {
   const { t, tn } = useUiText();
   const checkboxRef = useRef<HTMLInputElement>(null);
   const first = props.books[0] as ShelfEntry | undefined;
-  const selectable = props.selectionState !== "empty";
+  const selectable = props.selectionState !== undefined && props.selectionState !== "empty";
+  const selectLabel = props.books.length === 0
+    ? t("shelfFolder.selectEmpty", { name: props.name })
+    : t("shelfFolder.select", { name: props.name });
   useEffect(() => {
     if (checkboxRef.current) checkboxRef.current.indeterminate = props.selectionState === "mixed";
   }, [props.selectionState, props.selectionMode]);
@@ -508,7 +511,7 @@ export const ShelfFolderTableRow = memo(function ShelfFolderTableRow(props: {
       className={`shelf-table-row folder-row${props.selectionMode && props.selectionState === "all" ? " selected" : ""}${props.isDropTarget ? " is-drop-target" : ""}`}
       data-shelf-target="folder"
       data-folder-id={props.id}
-      title={props.selectionMode && !selectable ? t("shelfFolder.select.empty") : undefined}
+      title={props.selectionMode ? (selectable ? selectLabel : t("shelfFolder.select.empty")) : undefined}
       onClick={activate}
     >
       <td style={{ textAlign: "center" }}>
@@ -520,7 +523,7 @@ export const ShelfFolderTableRow = memo(function ShelfFolderTableRow(props: {
             disabled={!selectable}
             onClick={(e) => e.stopPropagation()}
             onChange={() => props.onToggleSelected(props.id)}
-            aria-label={t("shelfFolder.select", { name: props.name })}
+            aria-label={selectLabel}
           />
         ) : (
           <FolderIcon />

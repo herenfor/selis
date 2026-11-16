@@ -46,6 +46,7 @@
   "shelfFolder.filter.none": "No matching items",
   "shelfFolder.filter.limited": "Showing first {count} items; search to narrow down",
   "shelfFolder.select": "Select all books in {name}",
+  "shelfFolder.selectEmpty": "Select empty folder {name}",
   "shelfFolder.select.empty": "This folder has no books to select",
   "shelfFolder.importHere": "Import Books",
   "shelfFolder.importHere.tip": "Choose EPUB files to import into this folder",

@@ -49,6 +49,7 @@ export const shelfFolder = defineMessages("shelfFolder", {
   "shelfFolder.filter.none": "没有匹配项",
   "shelfFolder.filter.limited": "仅显示前 {count} 项，请搜索以缩小范围",
   "shelfFolder.select": { zh: "选择文件夹 {name} 中的全部书", note: "Batch selection: checkbox label of a folder; selecting it selects every book in it." },
+  "shelfFolder.selectEmpty": { zh: "选择空文件夹 {name}", note: "Batch selection: checkbox label of an empty folder." },
   "shelfFolder.select.empty": { zh: "文件夹里没有书，无法选择", note: "Batch selection: tooltip on an empty folder." },
   "shelfFolder.importHere": { zh: "导入新书", note: "Inside an open folder: pick EPUB files to import straight into it.", max: 14 },
   "shelfFolder.importHere.tip": "选择 EPUB 文件，导入到这个文件夹",

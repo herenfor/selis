@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { sortShelfEntries, type ShelfEntry } from "./shelf";
-import { folderSelectionState, selectableBookIds, sortShelfFolders, toggleFolderSelection } from "./shelfFolderSelection";
+import {
+  collectSubtreeFolderIdsBottomUp,
+  folderCardSelectionState,
+  folderSelectionState,
+  selectableBookIds,
+  sortShelfFolders,
+  toggleFolderSelection,
+} from "./shelfFolderSelection";
 
 function book(id: string, title: string, extra: Partial<ShelfEntry> = {}): ShelfEntry {
   return {
@@ -30,6 +37,19 @@ describe("folder batch selection", () => {
     const loose = book("loose", "散书");
     const ids = selectableBookIds([loose, books[0]], [books, []]);
     expect([...ids].sort()).toEqual(["a", "b", "c", "loose"]);
+  });
+
+  it("ER-0204: empty folders stay selectable when organizing is enabled and delete bottom-up", () => {
+    expect(folderCardSelectionState("f-empty", [], new Set(), new Set(), true)).toBe("none");
+    expect(folderCardSelectionState("f-empty", [], new Set(), new Set(["f-empty"]), true)).toBe("all");
+    expect(folderCardSelectionState("f-empty", [], new Set(), new Set(["f-empty"]), false)).toBe("empty");
+    expect(folderCardSelectionState("f-filled", books, new Set(["a"]), new Set(), true)).toBe("mixed");
+
+    const children = new Map([
+      ["root", [{ id: "child" }]],
+      ["child", [{ id: "grandchild" }]],
+    ]);
+    expect(collectSubtreeFolderIdsBottomUp(["root", "child"], children)).toEqual(["grandchild", "child", "root"]);
   });
 });
 

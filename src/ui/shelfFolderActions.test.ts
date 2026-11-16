@@ -307,3 +307,98 @@ describe("从文件夹移除", () => {
     }
   });
 });
+
+describe("ER-0204: 批量选择空文件夹与批量解散", () => {
+  const CHILD_EMPTY = "44444444-4444-4444-8444-444444444444";
+  const OTHER_EMPTY = "55555555-5555-4555-8555-555555555555";
+
+  function emptyFoldersOrg(): LibraryOrganization {
+    return {
+      ...emptyOrganization(),
+      folders: {
+        [FOLDER_A]: { name: { value: "父空夹", stamp: { counter: 1, deviceId: DEVICE } } },
+        [CHILD_EMPTY]: {
+          name: { value: "子空夹", stamp: { counter: 2, deviceId: DEVICE } },
+          parentId: { value: FOLDER_A, stamp: { counter: 3, deviceId: DEVICE } },
+        },
+        [OTHER_EMPTY]: { name: { value: "单独空夹", stamp: { counter: 4, deviceId: DEVICE } } },
+      },
+    };
+  }
+
+  it("全选支持空文件夹，确认删除按自底向上顺序解散父子空夹", async () => {
+    const dom = createReactDomHarness();
+    const commands: OrganizationCommand[] = [];
+    const baseProps: ShelfViewProps = {
+      entries: [],
+      organization: emptyFoldersOrg(),
+      busy: false,
+      theme: "light",
+      onThemeChange: () => {},
+      onOpen: () => {},
+      onImport: () => {},
+      onImportArchive: () => {},
+      onExportArchive: () => {},
+      onDelete: () => {},
+      onDeleteMany: () => {},
+      onApplyOrganization: async (command) => { commands.push(command); },
+    };
+    try {
+      await dom.render(createElement(ShelfView, baseProps));
+      await dom.click(dom.container.querySelector(".shelf-manage-toggle-btn")!);
+
+      const toggleAll = dom.container.querySelector<HTMLButtonElement>(".shelf-selection-toggle-all")!;
+      expect(toggleAll.hasAttribute("disabled")).toBe(false);
+      await dom.click(toggleAll);
+      expect(dom.container.querySelector(".shelf-selection-title")?.textContent).toBe("已选 2 个空文件夹");
+
+      const dockDelete = dom.container.querySelector<HTMLButtonElement>(".shelf-batch-action-btn.danger")!;
+      expect(dockDelete.hasAttribute("disabled")).toBe(false);
+      await dom.click(dockDelete);
+
+      const confirmDialog = dom.container.querySelector(".shelf-confirm")!;
+      expect(confirmDialog.textContent).toContain("解散 2 个空文件夹？");
+      await dom.click(confirmDialog.querySelector(".shelf-selection-delete")!);
+      await dom.run(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+      expect(commands).toHaveLength(3);
+      const deletedIds = commands.map((cmd) => (cmd as { type: "deleteFolder"; folderId: string }).folderId);
+      expect(deletedIds).toEqual([OTHER_EMPTY, CHILD_EMPTY, FOLDER_A]);
+      expect(deletedIds.indexOf(CHILD_EMPTY)).toBeLessThan(deletedIds.indexOf(FOLDER_A));
+    } finally {
+      await dom.dispose();
+    }
+  });
+
+  it("解散失败时保留多选状态以便重试", async () => {
+    const dom = createReactDomHarness();
+    try {
+      await dom.render(createElement(ShelfView, {
+        entries: [],
+        organization: emptyFoldersOrg(),
+        busy: false,
+        theme: "light",
+        onThemeChange: () => {},
+        onOpen: () => {},
+        onImport: () => {},
+        onImportArchive: () => {},
+        onExportArchive: () => {},
+        onDelete: () => {},
+        onDeleteMany: () => {},
+        onApplyOrganization: vi.fn().mockRejectedValue(new Error("locked")),
+      }));
+      await dom.click(dom.container.querySelector(".shelf-manage-toggle-btn")!);
+      await dom.click(dom.container.querySelector(`[data-folder-id="${FOLDER_A}"]`)!);
+      expect(dom.container.querySelector(".shelf-selection-title")?.textContent).toBe("已选 1 个空文件夹");
+
+      await dom.click(dom.container.querySelector(".shelf-batch-action-btn.danger")!);
+      await dom.click(dom.container.querySelector(".shelf-confirm .shelf-selection-delete")!);
+      await dom.run(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+      expect(dom.container.querySelector(".shelf-view.selection-mode")).not.toBeNull();
+      expect(dom.container.querySelector(".shelf-selection-title")?.textContent).toBe("已选 1 个空文件夹");
+    } finally {
+      await dom.dispose();
+    }
+  });
+});

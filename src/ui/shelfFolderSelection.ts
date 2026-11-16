@@ -14,6 +14,44 @@ export function folderSelectionState(books: readonly ShelfEntry[], selected: Rea
   return count === 0 ? "none" : count === books.length ? "all" : "mixed";
 }
 
+/**
+ * Derive a folder's batch checkbox state: non-empty folders follow their books,
+ * while empty folders can be selected directly when folder editing is enabled.
+ */
+export function folderCardSelectionState(
+  folderId: string,
+  books: readonly ShelfEntry[],
+  selectedBooks: ReadonlySet<string>,
+  selectedEmptyFolders: ReadonlySet<string>,
+  canSelectEmpty: boolean,
+): FolderSelectionState {
+  if (books.length > 0) return folderSelectionState(books, selectedBooks);
+  if (!canSelectEmpty) return "empty";
+  return selectedEmptyFolders.has(folderId) ? "all" : "none";
+}
+
+/**
+ * Collect empty descendant folder IDs bottom-up (children before parents) so
+ * deleting an empty folder tree never leaves nested empty subfolders orphaned.
+ */
+export function collectSubtreeFolderIdsBottomUp<F extends { readonly id: string }>(
+  rootIds: Iterable<string>,
+  childrenByParent: ReadonlyMap<string | null, readonly F[]>,
+): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const visit = (folderId: string): void => {
+    if (seen.has(folderId)) return;
+    seen.add(folderId);
+    for (const child of childrenByParent.get(folderId) ?? []) {
+      visit(child.id);
+    }
+    ordered.push(folderId);
+  };
+  for (const id of rootIds) visit(id);
+  return ordered;
+}
+
 /** Tapping a folder: all selected → clear them all; otherwise complete the folder. */
 export function toggleFolderSelection(books: readonly ShelfEntry[], selected: ReadonlySet<string>): Set<string> {
   const next = new Set(selected);

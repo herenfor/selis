@@ -22,7 +22,8 @@ import {
   type ShelfSort,
 } from "./shelf";
 import {
-  folderSelectionState,
+  collectSubtreeFolderIdsBottomUp,
+  folderCardSelectionState,
   selectableBookIds,
   sortShelfFolders,
   toggleFolderSelection,
@@ -306,9 +307,9 @@ export interface ShelfViewProps {
   onImportKoreader?(): void;
   /** Readest import (books and reading data); absent hides the row. */
   onImportReadest?(): void;
-  onDelete(id: string): void;
+  onDelete(id: string): void | Promise<void>;
   /** 批量删除（选中多本时由确认弹窗调用） */
-  onDeleteMany(ids: string[]): void;
+  onDeleteMany(ids: string[]): void | Promise<void>;
   /** Optional native cache/source-cover bridge; browser compatibility uses ShelfStore. */
   thumbnailProvider?: ThumbnailProvider;
   /** Optional shared library-body search projection; absent keeps the metadata-only shelf. */
@@ -472,7 +473,10 @@ export function ShelfView(props: ShelfViewProps) {
   const cloudUploadRunning = cloudBookUploadBusy(cloudUpload);
   const [dockClosing, setDockClosing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedEmptyFolderIds, setSelectedEmptyFolderIds] = useState<Set<string>>(new Set());
   const [deleteTargetIds, setDeleteTargetIds] = useState<string[] | null>(null);
+  const [deleteTargetFolderIds, setDeleteTargetFolderIds] = useState<string[] | null>(null);
+  const [batchDissolvingFolders, setBatchDissolvingFolders] = useState(false);
   // 新建位置由入口决定：根层、当前文件夹内或移动/导入预览里选中的位置。
   const [createFolderOpen, setCreateFolderOpen] = useState<{ parentId: string | null } | null>(null);
   const [renameFolderTarget, setRenameFolderTarget] = useState<{ id: string; name: string } | null>(null);
@@ -500,7 +504,9 @@ export function ShelfView(props: ShelfViewProps) {
   const batchDockRef = useRef<HTMLDivElement | null>(null);
   const batchDockKey = [
     t("shelfMain.dock.hint"),
-    selectedIds.size,
+    selectedIds.size + selectedEmptyFolderIds.size,
+    selectedIds.size > 0,
+    selectedEmptyFolderIds.size > 0,
     Boolean(props.onExportArchive),
     Boolean(props.onExportBooks),
     Boolean(getRuntimeCapabilities().supportsLanTransfer && props.onOpenLanTransfer),
@@ -693,22 +699,25 @@ export function ShelfView(props: ShelfViewProps) {
     deleteCloseTimerRef.current = window.setTimeout(() => {
       deleteCloseTimerRef.current = null;
       setDeleteTargetIds(null);
+      setDeleteTargetFolderIds(null);
       setDeleteTargetsClosing(false);
     }, MENU_CLOSE_MS);
   }, []);
 
   /** A new confirmation takes over a closing one instead of being cleared by its timer. */
-  const requestDelete = useCallback((ids: string[]): void => {
-    if (ids.length === 0) return;
+  const requestDelete = useCallback((ids: string[], folderIds: string[] = []): void => {
+    if (ids.length === 0 && folderIds.length === 0) return;
     if (deleteCloseTimerRef.current !== null) {
       window.clearTimeout(deleteCloseTimerRef.current);
       deleteCloseTimerRef.current = null;
     }
     setDeleteTargetsClosing(false);
-    setDeleteTargetIds(ids);
+    setDeleteTargetIds(ids.length > 0 ? ids : null);
+    setDeleteTargetFolderIds(folderIds.length > 0 ? folderIds : null);
   }, []);
 
   // 全局快捷键：按 / 键聚焦快速书名过滤框，按 Esc 退出批量选择模式
+  const exitSelectionRef = useRef<() => void>(() => {});
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -720,13 +729,13 @@ export function ShelfView(props: ShelfViewProps) {
           quickInputRef.current?.select();
         }
       }
-      if (e.key === "Escape" && selectionMode) {
-        exitSelection();
+      if (e.key === "Escape" && selectionMode && !deleteTargetIds && !deleteTargetFolderIds) {
+        exitSelectionRef.current();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectionMode]);
+  }, [selectionMode, deleteTargetIds, deleteTargetFolderIds]);
 
   const setDensity = useCallback((next: ShelfDensity) => {
     setDensityState(next);
@@ -1178,6 +1187,21 @@ export function ShelfView(props: ShelfViewProps) {
   }, [gridFolderCount, scrollShelfToOffset, viewMode, virtualizer.gridGeometry, visible]);
 
   const thumbnailProvider = props.thumbnailProvider ?? legacyThumbnailProvider;
+  const canOrganize = Boolean(props.onApplyOrganization);
+
+  const deleteTargetFolders = useMemo(() => {
+    if (!deleteTargetFolderIds || deleteTargetFolderIds.length === 0) return null;
+    const found = deleteTargetFolderIds.flatMap((id) => {
+      const node = folderIndex.byId.get(id);
+      if (!node || (folderSubtreeBooksMap.get(id)?.length ?? 0) > 0) return [];
+      return [{ id: node.id, name: node.name }];
+    });
+    return found.length > 0 ? found : null;
+  }, [deleteTargetFolderIds, folderIndex.byId, folderSubtreeBooksMap]);
+
+  useEffect(() => {
+    if (deleteTargetFolderIds && !deleteTargetFolders) setDeleteTargetFolderIds(null);
+  }, [deleteTargetFolderIds, deleteTargetFolders]);
 
   // Visible books plus whole visible folders (a folder selects all its books, whatever the book filters).
   const selectableIds = useMemo(
@@ -1185,7 +1209,17 @@ export function ShelfView(props: ShelfViewProps) {
     [visible, visibleFolders, folderSubtreeBooksMap],
   );
 
-  // 当可选范围变化（筛选/scope/文件夹成员）时，自动清理已不可选的书
+  // 空文件夹在有组织权限时也可直接进入批量选择，方便删书后一起收口清理。
+  const selectableEmptyFolderIds = useMemo(() => {
+    if (!canOrganize) return new Set<string>();
+    return new Set(
+      visibleFolders
+        .filter((folder) => (folderSubtreeBooksMap.get(folder.id)?.length ?? 0) === 0)
+        .map((folder) => folder.id),
+    );
+  }, [canOrganize, visibleFolders, folderSubtreeBooksMap]);
+
+  // 当可选范围变化（筛选/scope/文件夹成员）时，自动清理已不可选的书和空文件夹
   useEffect(() => {
     setSelectedIds((prev) => {
       if (prev.size === 0) return prev;
@@ -1200,6 +1234,19 @@ export function ShelfView(props: ShelfViewProps) {
     });
   }, [selectableIds]);
 
+  useEffect(() => {
+    setSelectedEmptyFolderIds((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (selectableEmptyFolderIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [selectableEmptyFolderIds]);
+
   const toggleSelected = useCallback((id: string): void => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1211,24 +1258,49 @@ export function ShelfView(props: ShelfViewProps) {
 
   const toggleFolderSelected = useCallback((folderId: string): void => {
     const books = folderSubtreeBooksMap.get(folderId) ?? [];
-    setSelectedIds((prev) => toggleFolderSelection(books, prev));
-  }, [folderSubtreeBooksMap]);
+    if (books.length > 0) {
+      setSelectedIds((prev) => toggleFolderSelection(books, prev));
+      return;
+    }
+    if (!selectableEmptyFolderIds.has(folderId)) return;
+    setSelectedEmptyFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  }, [folderSubtreeBooksMap, selectableEmptyFolderIds]);
 
   const enterSelection = (): void => {
     setSelectedIds(new Set());
+    setSelectedEmptyFolderIds(new Set());
     setDockClosing(false);
     setSelectionMode(true);
   };
 
-  const noneSelected = selectedIds.size === 0;
+  const noneBooksSelected = selectedIds.size === 0;
+  const noneSelected = selectedIds.size === 0 && selectedEmptyFolderIds.size === 0;
+  const totalSelectedCount = selectedIds.size + selectedEmptyFolderIds.size;
+  const totalSelectableCount = selectableIds.size + selectableEmptyFolderIds.size;
+  const allSelected = totalSelectableCount > 0
+    && selectedIds.size === selectableIds.size
+    && selectedEmptyFolderIds.size === selectableEmptyFolderIds.size;
+  const selectionSummaryText = selectedIds.size > 0 && selectedEmptyFolderIds.size > 0
+    ? t("shelfMain.selection.mixed", { books: selectedIds.size, folders: selectedEmptyFolderIds.size })
+    : selectedEmptyFolderIds.size > 0
+      ? tn("shelfMain.selection.emptyFolders", selectedEmptyFolderIds.size, { count: selectedEmptyFolderIds.size })
+      : tn("shelfMain.selection.count", selectedIds.size, { count: selectedIds.size });
+
   const exitSelection = useCallback((): void => {
     setDockClosing(true);
     window.setTimeout(() => {
       setSelectionMode(false);
       setDockClosing(false);
       setSelectedIds(new Set());
+      setSelectedEmptyFolderIds(new Set());
     }, menuCloseMs());
   }, []);
+  exitSelectionRef.current = exitSelection;
 
   const closeSettings = useCallback((): void => {
     setSettingsOpen(false);
@@ -1367,7 +1439,7 @@ export function ShelfView(props: ShelfViewProps) {
       return true;
     }
     if (submenuBackHandlerRef.current?.()) return true;
-    if (deleteTargets) {
+    if (deleteTargets || deleteTargetFolders) {
       handleCancelDelete();
       return true;
     }
@@ -1438,6 +1510,7 @@ export function ShelfView(props: ShelfViewProps) {
     leaveBodySearch,
     createFolderOpen,
     deleteTargets,
+    deleteTargetFolders,
     dissolveFolderTarget,
     settingsOpen,
     exitSelection,
@@ -1460,6 +1533,7 @@ export function ShelfView(props: ShelfViewProps) {
     cloudUploadOpen ||
     (menu && !menuClosing) ||
     deleteTargets ||
+    deleteTargetFolders ||
     pendingMergeBooks ||
     moveDialogTargets ||
     createFolderOpen ||
@@ -1853,8 +1927,6 @@ export function ShelfView(props: ShelfViewProps) {
     }));
   }, [activeFolders, folderSubtreeBooksMap]);
 
-  const canOrganize = Boolean(props.onApplyOrganization);
-
   const handleBookLongPress = useCallback(
     (entry: ShelfEntry, kind: ShelfLongPress, point: { x: number; y: number }): void => {
       armGestureTail();
@@ -2208,19 +2280,24 @@ export function ShelfView(props: ShelfViewProps) {
               <button className="shelf-selection-exit" type="button" onClick={exitSelection}>
                 {t("shelfMain.selection.cancel")}
               </button>
-              <span className="shelf-selection-title">{tn("shelfMain.selection.count", selectedIds.size, { count: selectedIds.size })}</span>
+              <span className="shelf-selection-title">{selectionSummaryText}</span>
               <button
                 className="shelf-selection-toggle-all"
                 type="button"
-                aria-pressed={selectedIds.size === selectableIds.size && selectableIds.size > 0}
-                disabled={props.busy || selectableIds.size === 0}
+                aria-pressed={allSelected}
+                disabled={props.busy || batchDissolvingFolders || totalSelectableCount === 0}
                 onClick={() => {
-                  if (selectedIds.size === selectableIds.size) setSelectedIds(new Set());
-                  else setSelectedIds(new Set(selectableIds));
+                  if (allSelected) {
+                    setSelectedIds(new Set());
+                    setSelectedEmptyFolderIds(new Set());
+                  } else {
+                    setSelectedIds(new Set(selectableIds));
+                    setSelectedEmptyFolderIds(new Set(selectableEmptyFolderIds));
+                  }
                 }}
               >
-                <CheckSquareIcon checked={selectedIds.size === selectableIds.size && selectableIds.size > 0} />
-                <span>{selectedIds.size === selectableIds.size && selectableIds.size > 0 ? t("shelfMain.selection.clearAll") : t("shelfMain.selection.none")}</span>
+                <CheckSquareIcon checked={allSelected} />
+                <span>{allSelected ? t("shelfMain.selection.clearAll") : t("shelfMain.selection.none")}</span>
               </button>
             </div>
           </div>
@@ -2409,7 +2486,7 @@ export function ShelfView(props: ShelfViewProps) {
                 className="shelf-manage-toggle-btn"
                 type="button"
                 onClick={enterSelection}
-                disabled={props.busy || props.entries.length === 0}
+                disabled={props.busy || (props.entries.length === 0 && selectableEmptyFolderIds.size === 0)}
                 title={t("shelfMain.batch.enter.tip")}
                 data-testid="shelf-batch-select-btn"
               >
@@ -3062,7 +3139,7 @@ export function ShelfView(props: ShelfViewProps) {
                     childCount={folderIndex.childrenByParent.get(folder.id)?.length ?? 0}
                     provider={thumbnailProvider}
                     selectionMode={selectionMode}
-                    selectionState={folderSelectionState(folderSubtreeBooksMap.get(folder.id) ?? [], selectedIds)}
+                    selectionState={folderCardSelectionState(folder.id, folderSubtreeBooksMap.get(folder.id) ?? [], selectedIds, selectedEmptyFolderIds, canOrganize)}
                     isDropTarget={props.externalDropFolderId === folder.id}
                     onOpen={handleOpenFolderModal}
                     onToggleSelected={toggleFolderSelected}
@@ -3122,7 +3199,9 @@ export function ShelfView(props: ShelfViewProps) {
                   childCount={folderIndex.childrenByParent.get(folder.id)?.length ?? 0}
                   provider={thumbnailProvider}
                   selectionMode={selectionMode}
-                  selectionState={selectionMode ? folderSelectionState(folderSubtreeBooksMap.get(folder.id) ?? [], selectedIds) : undefined}
+                  selectionState={selectionMode
+                    ? folderCardSelectionState(folder.id, folderSubtreeBooksMap.get(folder.id) ?? [], selectedIds, selectedEmptyFolderIds, canOrganize)
+                    : undefined}
                   onToggleSelected={toggleFolderSelected}
                   isDropTarget={(dropTarget?.type === "folder" && dropTarget.id === folder.id) || props.externalDropFolderId === folder.id}
                   menuOpen={openMenuKey === `folder:${folder.id}`}
@@ -3297,61 +3376,102 @@ export function ShelfView(props: ShelfViewProps) {
         />
       )}
 
-      {/* 删除确认弹层 */}
-      {deleteTargets && (
-        <div
-          className={`shelf-confirm-backdrop${deleteTargetsClosing ? " is-closing" : ""}`}
-          onClick={handleCancelDelete}
-        >
+      {/* 删除/批量清理确认弹层 */}
+      {(deleteTargets || deleteTargetFolders) && (() => {
+        const bookTargets = deleteTargets ?? [];
+        const folderTargets = deleteTargetFolders ?? [];
+        const hasBooks = bookTargets.length > 0;
+        const hasFolders = folderTargets.length > 0;
+        const previewNames = [
+          ...bookTargets.map((target) => target.title),
+          ...folderTargets.map((folder) => folder.name),
+        ];
+        const titleText = hasBooks && hasFolders
+          ? t("shelfMain.delete.mixed", { books: bookTargets.length, folders: folderTargets.length })
+          : hasBooks
+            ? (bookTargets.length > 1
+              ? tn("shelfMain.delete.many", bookTargets.length, { count: bookTargets.length })
+              : t("shelfMain.delete.one"))
+            : (folderTargets.length > 1
+              ? tn("shelfMain.delete.emptyFolderMany", folderTargets.length, { count: folderTargets.length })
+              : t("shelfMain.delete.emptyFolderOne"));
+        const hintText = hasBooks && hasFolders
+          ? t("shelfMain.delete.mixedHint")
+          : hasBooks
+            ? t(bookTargets.every((target) => target.originalLocation) ? "shelfMain.delete.hintOriginal" : "shelfMain.delete.hint")
+            : t("shelfMain.delete.emptyFolderHint");
+        const confirmLabel = !hasBooks && hasFolders
+          ? t("shelfMain.delete.dissolveConfirm")
+          : t("shelfMain.delete.confirm");
+
+        return (
           <div
-            className="shelf-confirm"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="shelf-confirm-dialog-title"
-            onClick={(e) => e.stopPropagation()}
+            className={`shelf-confirm-backdrop${deleteTargetsClosing ? " is-closing" : ""}`}
+            onClick={handleCancelDelete}
           >
-            <div id="shelf-confirm-dialog-title" className="shelf-confirm-title">
-              {deleteTargets.length > 1
-                ? tn("shelfMain.delete.many", deleteTargets.length, { count: deleteTargets.length })
-                : t("shelfMain.delete.one")}
-            </div>
-            <div className="shelf-confirm-name">
-              {deleteTargets.length > 1
-                ? deleteTargets
-                    .slice(0, 3)
-                    .map((target) => target.title)
-                    .join(t("shelfMain.delete.separator")) + (deleteTargets.length > 3 ? "…" : "")
-                : deleteTargets[0].title}
-            </div>
-            <div className="shelf-confirm-hint">
-              {t(deleteTargets.every((target) => target.originalLocation) ? "shelfMain.delete.hintOriginal" : "shelfMain.delete.hint")}
-            </div>
-            <div className="shelf-confirm-actions">
-              <button className="shelf-selection-cancel" type="button" onClick={handleCancelDelete}>
-                {t("shelfMain.delete.cancel")}
-              </button>
-              <button
-                className="shelf-selection-delete"
-                type="button"
-                disabled={props.busy || props.importActive}
-                onClick={() => {
-                  const ids = deleteTargets.map((target) => target.id);
-                  setDeleteTargetIds(null);
-                  if (selectionMode) {
-                    if (ids.length > 1) props.onDeleteMany(ids);
-                    else props.onDelete(ids[0]);
-                    exitSelection();
-                  } else {
-                    props.onDelete(ids[0]);
-                  }
-                }}
-              >
-                {t("shelfMain.delete.confirm")}
-              </button>
+            <div
+              className="shelf-confirm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="shelf-confirm-dialog-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div id="shelf-confirm-dialog-title" className="shelf-confirm-title">
+                {titleText}
+              </div>
+              <div className="shelf-confirm-name">
+                {previewNames.length > 1
+                  ? previewNames.slice(0, 3).join(t("shelfMain.delete.separator")) + (previewNames.length > 3 ? "…" : "")
+                  : previewNames[0]}
+              </div>
+              <div className="shelf-confirm-hint">
+                {hintText}
+              </div>
+              <div className="shelf-confirm-actions">
+                <button className="shelf-selection-cancel" type="button" onClick={handleCancelDelete} disabled={batchDissolvingFolders}>
+                  {t("shelfMain.delete.cancel")}
+                </button>
+                <button
+                  className="shelf-selection-delete"
+                  type="button"
+                  disabled={props.busy || props.importActive || batchDissolvingFolders}
+                  onClick={() => {
+                    const bookIds = bookTargets.map((target) => target.id);
+                    const folderIds = folderTargets.map((folder) => folder.id);
+                    const orderedFolderIds = folderIds.length > 0
+                      ? collectSubtreeFolderIdsBottomUp(folderIds, folderIndex.childrenByParent)
+                      : [];
+                    const wasSelectionMode = selectionMode;
+                    setDeleteTargetIds(null);
+                    setDeleteTargetFolderIds(null);
+                    void (async () => {
+                      if (bookIds.length > 1) await Promise.resolve(props.onDeleteMany(bookIds));
+                      else if (bookIds.length === 1) await Promise.resolve(props.onDelete(bookIds[0]));
+                      if (orderedFolderIds.length > 0 && props.onApplyOrganization) {
+                        setBatchDissolvingFolders(true);
+                        try {
+                          for (const folderId of orderedFolderIds) {
+                            await props.onApplyOrganization({ type: "deleteFolder", folderId });
+                            if (activeFolderModal?.folderId === folderId) handleCloseFolderModal();
+                          }
+                        } catch {
+                          // onApplyOrganization has already surfaced the notice; keep remaining selection for retry.
+                          return;
+                        } finally {
+                          setBatchDissolvingFolders(false);
+                        }
+                      }
+                      if (wasSelectionMode) exitSelection();
+                    })();
+                  }}
+                >
+                  {confirmLabel}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 拖拽悬停到任一落点时的全景模糊背景层：书与文件夹同一处理 */}
       {dropTarget && (
@@ -3403,15 +3523,15 @@ export function ShelfView(props: ShelfViewProps) {
       {(selectionMode || dockClosing) && (
         <div ref={batchDockRef} className={`shelf-floating-batch-dock${dockClosing ? " is-closing" : ""}`} role="toolbar" aria-label={t("shelfMain.dock")}>
           <div className="shelf-floating-batch-info">
-            <span className="shelf-floating-batch-badge">{selectedIds.size}</span>
-            <span>{selectedIds.size > 0 ? tn("shelfMain.dock.selected", selectedIds.size, { count: selectedIds.size }) : t("shelfMain.dock.hint")}</span>
+            <span className="shelf-floating-batch-badge">{totalSelectedCount}</span>
+            <span>{totalSelectedCount > 0 ? selectionSummaryText : t("shelfMain.dock.hint")}</span>
           </div>
           <div className="shelf-floating-batch-actions">
             {/* 动作常驻、未选时置灰：首次勾选时底栏不跳动。 */}
             <button
               className="shelf-batch-action-btn"
               type="button"
-              disabled={noneSelected || props.busy}
+              disabled={noneBooksSelected || props.busy || batchDissolvingFolders}
               onClick={() => void handleBatchFavorite(true)}
               title={t("shelfMain.dock.favorite.tip")}
             >
@@ -3421,7 +3541,7 @@ export function ShelfView(props: ShelfViewProps) {
             <button
               className="shelf-batch-action-btn"
               type="button"
-              disabled={noneSelected || props.busy}
+              disabled={noneBooksSelected || props.busy || batchDissolvingFolders}
               onClick={() => void handleBatchFavorite(false)}
               title={t("shelfMain.dock.unfavorite")}
             >
@@ -3431,7 +3551,7 @@ export function ShelfView(props: ShelfViewProps) {
             <button
               className="shelf-batch-action-btn"
               type="button"
-              disabled={noneSelected || props.busy}
+              disabled={noneBooksSelected || props.busy || batchDissolvingFolders}
               onClick={() => {
                 const targets = props.entries.filter((e) => selectedIds.has(e.id));
                 if (targets.length > 0) setMoveDialogTargetIds(targets.map((entry) => entry.id));
@@ -3446,7 +3566,7 @@ export function ShelfView(props: ShelfViewProps) {
               <button
                 className="shelf-batch-action-btn"
                 type="button"
-                disabled={noneSelected || props.busy || props.saveFileActive || props.lanTransferActive}
+                disabled={noneBooksSelected || props.busy || batchDissolvingFolders || props.saveFileActive || props.lanTransferActive}
                 onClick={() => {
                   const targets = props.entries.filter((e) => selectedIds.has(e.id));
                   if (targets.length > 0) props.onExportArchive!(targets);
@@ -3461,7 +3581,7 @@ export function ShelfView(props: ShelfViewProps) {
               <button
                 className="shelf-batch-action-btn"
                 type="button"
-                disabled={noneSelected || props.busy || props.saveFileActive || props.lanTransferActive}
+                disabled={noneBooksSelected || props.busy || batchDissolvingFolders || props.saveFileActive || props.lanTransferActive}
                 onClick={() => {
                   const targets = props.entries.filter((e) => selectedIds.has(e.id));
                   if (targets.length > 0) props.onExportBooks!(targets);
@@ -3476,7 +3596,7 @@ export function ShelfView(props: ShelfViewProps) {
               <button
                 className="shelf-batch-action-btn"
                 type="button"
-                disabled={!props.lanTransferActive && (noneSelected || props.busy || props.importActive || props.saveFileActive)}
+                disabled={!props.lanTransferActive && (noneBooksSelected || props.busy || batchDissolvingFolders || props.importActive || props.saveFileActive)}
                 onClick={() => {
                   const targets = props.entries.filter((e) => selectedIds.has(e.id));
                   if (props.lanTransferActive || targets.length > 0) props.onOpenLanTransfer!(targets);
@@ -3491,7 +3611,7 @@ export function ShelfView(props: ShelfViewProps) {
               <button
                 className="shelf-batch-action-btn"
                 type="button"
-                disabled={noneSelected || props.busy || cloudUploadRunning}
+                disabled={noneBooksSelected || props.busy || batchDissolvingFolders || cloudUploadRunning}
                 onClick={() => {
                   const targets = props.entries.filter((e) => selectedIds.has(e.id));
                   if (targets.length > 0) requestCloudBookUpload(targets.map((entry) => entry.contentHash ?? entry.id));
@@ -3506,12 +3626,17 @@ export function ShelfView(props: ShelfViewProps) {
             <button
               className="shelf-batch-action-btn danger"
               type="button"
-              disabled={noneSelected || props.busy || props.importActive}
+              disabled={noneSelected || props.busy || props.importActive || batchDissolvingFolders}
               onClick={() => {
                 const targets = props.entries.filter((e) => selectedIds.has(e.id));
-                if (targets.length > 0) requestDelete(targets.map((entry) => entry.id));
+                const folderIds = [...selectedEmptyFolderIds];
+                if (targets.length > 0 || folderIds.length > 0) requestDelete(targets.map((entry) => entry.id), folderIds);
               }}
-              title={t("shelfMain.dock.delete.tip")}
+              title={selectedIds.size > 0 && selectedEmptyFolderIds.size > 0
+                ? t("shelfMain.dock.deleteMixed.tip")
+                : selectedEmptyFolderIds.size > 0
+                  ? t("shelfMain.dock.deleteEmptyFolders.tip")
+                  : t("shelfMain.dock.delete.tip")}
             >
               <TrashIcon />
               <span>{t("shelfMain.dock.delete")}</span>
