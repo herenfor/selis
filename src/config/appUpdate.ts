@@ -121,9 +121,9 @@ export function parseLatestRelease(json: unknown): LatestRelease | null {
 }
 
 export function pickUpdateAsset(release: LatestRelease, kind: InstallKind): UpdateAsset | null {
-  const name = kind === "installer" ? `EPUB.Reader_${release.version}_x64-setup.exe`
-    : kind === "android" ? `epub-reader_${release.version}_android-arm64.apk`
-    : kind === "portable" ? `epub-reader_${release.version}_portable.exe` : null;
+  const name = kind === "installer" ? `SeLis_${release.version}_x64-setup.exe`
+    : kind === "android" ? `SeLis_${release.version}_android-arm64.apk`
+    : kind === "portable" ? `SeLis_${release.version}_portable.exe` : null;
   if (!name) return null;
   const releaseRoot = releaseRootFor(release.htmlUrl, release.tag);
   if (!releaseRoot) return null;

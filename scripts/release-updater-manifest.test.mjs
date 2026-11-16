@@ -18,7 +18,7 @@ before(async () => {
     "signer", "generate", "--ci", "--password", "", "--write-keys", key],
   { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "1" } });
   assert.equal(generated.status, 0, "one-use test key generation must succeed");
-  const installer = join(directory, "EPUB.Reader_0.3.98_x64-setup.exe");
+  const installer = join(directory, "SeLis_0.3.98_x64-setup.exe");
   await writeFile(installer, "synthetic installer bytes, never executed");
   const passwordFile = join(directory, "password");
   await writeFile(passwordFile, "", { mode: 0o600 });
@@ -37,7 +37,7 @@ test("signs with a one-use key, verifies the real installer and atomically creat
   result = await buildUpdaterManifest(options);
   assert.equal(result.manifest.version, "0.3.98");
   assert.equal(result.manifest.platforms["windows-x86_64"].url,
-    "https://github.com/herenfor/selis/releases/download/v0.3.98/EPUB.Reader_0.3.98_x64-setup.exe");
+    "https://github.com/herenfor/selis/releases/download/v0.3.98/SeLis_0.3.98_x64-setup.exe");
   assert.deepEqual(await readdir(options.outputDirectory), ["latest.json"]);
   assert.deepEqual(JSON.parse(await readFile(result.path, "utf8")), result.manifest);
 });

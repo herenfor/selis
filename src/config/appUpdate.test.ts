@@ -24,8 +24,8 @@ describe("application update policy", () => {
     const release = parseLatestRelease(fixture)!;
     expect(release.version).toBe("0.3.2");
     expect(release.important).toBe(false);
-    expect(pickUpdateAsset(release, "installer")?.name).toBe("EPUB.Reader_0.3.2_x64-setup.exe");
-    expect(pickUpdateAsset(release, "portable")?.name).toBe("epub-reader_0.3.2_portable.exe");
+    expect(pickUpdateAsset(release, "installer")?.name).toBe("SeLis_0.3.2_x64-setup.exe");
+    expect(pickUpdateAsset(release, "portable")?.name).toBe("SeLis_0.3.2_portable.exe");
     expect(pickUpdateAsset(release, "android")?.sha256).toBe(fixture.assets[0].digest.slice(7));
     expect(pickUpdateAsset(release, "unsupported")).toBeNull();
     expect(parseLatestRelease({ ...fixture, body: "<!-- epub-reader:update important -->" })?.important).toBe(true);

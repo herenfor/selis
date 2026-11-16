@@ -74,7 +74,7 @@ export async function assertProductionFrontend(directory) {
 export async function buildUpdaterManifest({ installer, version, privateKeyPath, passwordFile,
   publicKeyPath, frontendDirectory, outputDirectory = dirname(installer), notes = "", publishedAt = new Date().toISOString() }) {
   if (!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u.test(version)) throw Error("A stable x.y.z version is required");
-  const name = `EPUB.Reader_${version}_x64-setup.exe`;
+  const name = `SeLis_${version}_x64-setup.exe`;
   if (basename(installer) !== name) throw Error("Installer filename and release version do not match");
   if (!Number.isFinite(Date.parse(publishedAt))) throw Error("Invalid release date");
   if (!(await stat(installer)).isFile() || (await stat(installer)).size === 0) throw Error("Installer is empty or not a regular file");

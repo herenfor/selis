@@ -53,10 +53,10 @@ describe("update source of a build", () => {
   });
 
   it("routes test APK bytes locally without weakening production release validation", () => {
-    const url = "https://github.com/herenfor/epub-read/releases/download/v0.3.99/epub-reader_0.3.99_android-arm64.apk";
+    const url = "https://github.com/herenfor/epub-read/releases/download/v0.3.99/SeLis_0.3.99_android-arm64.apk";
     const env = { EPUB_READER_UPDATE_CHECK_URL: "http://127.0.0.1:48731/latest", EPUB_READER_UPDATE_MANIFEST_URL: "http://127.0.0.1:48731/latest.json", EPUB_READER_UPDATE_TEST_DOWNLOAD_BASE: "http://127.0.0.1:48731/assets/" };
     expect(updateDownloadUrl(url, resolveAppUpdateSource(env))).toBe(url);
     expect(updateDownloadUrl(url, resolveAppUpdateSource({ ...env, EPUB_READER_UPDATE_TEST: "1" })))
-      .toBe("http://127.0.0.1:48731/assets/epub-reader_0.3.99_android-arm64.apk");
+      .toBe("http://127.0.0.1:48731/assets/SeLis_0.3.99_android-arm64.apk");
   });
 });
