@@ -35,6 +35,29 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.4",
+    status: "released",
+    releasedOn: "2026-11-17",
+    items: [
+      {
+        category: "new",
+        text: "字体设置新增「标题」与「正文」分别选择，可用独立开关开启；保留强制覆盖与缺失补充两种模式。",
+      },
+      {
+        category: "improved",
+        text: "双页模式下，两图书名页更容易与封面正确并排；滑动翻页后书页背景图保持对齐。",
+      },
+      {
+        category: "improved",
+        text: "拖书到书上建夹与拖入文件夹的反馈统一；文件夹导入预览样式与超长标题显示修正。",
+      },
+      {
+        category: "fixed",
+        text: "修复部分书籍 SVG 封面白屏、回翻上一章落到章首、批量删除后空文件夹残留等问题（缺样式表 / 机排书本的适配仍在继续，本版未包含 PDF）。",
+      },
+    ],
+  },
+  {
     version: "0.4.3",
     status: "released",
     releasedOn: "2026-11-16",
