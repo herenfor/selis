@@ -386,4 +386,27 @@ describe("第三步补修：书架触摸长按与子菜单 Back", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("ER-0205: 文件夹卡片标题图标与文本分容器放置，长串连续字符不挤占图标首行", async () => {
+    const dom = createReactDomHarness();
+    const longDigits = "2".repeat(40);
+    const organization = {
+      ...emptyOrganization(),
+      folders: { f1: { name: { value: longDigits, stamp: { counter: 1, deviceId: "test" } } } },
+    };
+    try {
+      await dom.render(createElement(ShelfView, {
+        ...makeProps([]),
+        organization,
+      }));
+      const title = dom.container.querySelector(".shelf-folder-card .shelf-card-title");
+      expect(title).not.toBeNull();
+      expect(title?.textContent).toBe(longDigits);
+      expect(title?.querySelector(":scope > .shelf-svg-icon")).not.toBeNull();
+      const textSpan = title?.querySelector(":scope > .shelf-folder-card-title-text");
+      expect(textSpan?.textContent).toBe(longDigits);
+    } finally {
+      await dom.dispose();
+    }
+  });
 });

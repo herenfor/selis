@@ -535,7 +535,10 @@ export const ShelfFolderCard = memo(function ShelfFolderCard(props: ShelfFolderC
       </div>
 
       <div className="shelf-card-info">
-        <div className="shelf-card-title"><FolderIcon />{props.name}</div>
+        <div className="shelf-card-title">
+          <FolderIcon />
+          <span className="shelf-folder-card-title-text">{props.name}</span>
+        </div>
         <div className="shelf-card-meta">
           {/* 和书卡片一样两行：第一行本数，第二行子文件夹数；没有子文件夹也留着这一行，保证整行等高。 */}
           <span className="shelf-card-creator">
