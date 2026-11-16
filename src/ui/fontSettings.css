@@ -1,0 +1,116 @@
+/*
+ * Reader font-settings panel layout (ER-0208).
+ *
+ * The base .font-settings-* sizing lives in styles.css (a 6k-line sheet we do
+ * not want to grow). This file owns the 2026-11 redesign only: options card,
+ * body/heading role bar, row action rail and the taller phone sheet.
+ */
+
+/* 设置卡片、角色条、来源页签和列表行共用一套栅格与行尾动作。 */
+.font-settings-options {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 0 12px 6px;
+  border: var(--hairline) solid var(--ui-border-control);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+.font-settings-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  color: var(--fg);
+  font-size: var(--fs-body);
+}
+.font-settings-option + .font-settings-option {
+  border-top: var(--hairline) solid color-mix(in srgb, var(--panel-border) 55%, transparent);
+}
+.font-settings-option-hint {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+.font-settings-rolebar { display: flex; flex: none; align-items: center; gap: 10px; }
+.font-settings-rolebar-label { flex: none; color: var(--muted); font-size: var(--fs-caption); }
+.font-settings-panel .font-settings-source {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: none;
+}
+.font-settings-rolebar .font-settings-roles {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: none;
+}
+.font-settings-source > button,
+.font-settings-roles > button { width: 100%; }
+.font-settings-panel .font-settings-row-wrap {
+  gap: 2px;
+  padding-right: 4px;
+  border-radius: var(--r-xs);
+}
+/* 整行只画一次底色：名称按钮保持透明，避免选中/悬停叠出两层蓝。 */
+.font-settings-panel .font-settings-row,
+.font-settings-panel .font-settings-row:hover,
+.font-settings-panel .font-settings-row.active { background: transparent; }
+.font-settings-row-wrap.active { background: var(--btn-tint-hover); }
+@media (hover: hover) {
+  .font-settings-row-wrap:hover:not(.active) { background: var(--btn-tint-hover); }
+}
+.font-follow-book {
+  margin-bottom: 4px;
+  border-bottom: var(--hairline) solid color-mix(in srgb, var(--panel-border) 55%, transparent);
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+}
+.font-settings-row-wrap.active .font-settings-row { color: var(--accent); font-weight: 600; }
+.font-settings-panel .font-settings-row-wrap > .font-settings-row { flex: 1 1 0; width: 0; padding-right: 4px; }
+.font-settings-row-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  color: var(--accent);
+}
+.font-settings-row-mark .shelf-svg-icon { width: 22px; height: 22px; }
+.font-settings-panel .font-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.8;
+}
+.font-settings-panel .font-delete .shelf-svg-icon { width: 22px; height: 22px; }
+.font-settings-panel .font-delete:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+  opacity: 1;
+}
+@media (hover: hover) {
+  .font-settings-row-wrap .font-delete { opacity: 0; }
+  .font-settings-row-wrap:hover .font-delete,
+  .font-settings-row-wrap.active .font-delete,
+  .font-settings-row-wrap .font-delete:focus-visible { opacity: 0.6; }
+}
+.app[data-touch-ui="true"] .font-settings-option { min-height: 48px; }
+.app[data-touch-ui="true"] .font-settings-row-mark { width: 30px; }
+.app[data-touch-ui="true"] .font-settings-row-mark .shelf-svg-icon,
+.app[data-touch-ui="true"] .font-settings-panel .font-delete .shelf-svg-icon { width: 24px; height: 24px; }
+.app[data-touch-ui="true"] .font-settings-panel .font-delete { width: 44px; height: 44px; opacity: 1; }
+.app[data-mobile-chrome="true"][data-layout="compact"] .font-settings-option-hint { display: none; }
+
+/* 手机字体页：功能变多后 404px 的面板只剩一条列表，给字体页更高但仍露出正文。
+   用 body 前缀抬高优先级，不依赖两个样式表谁先加载。 */
+body .app[data-mobile-chrome="true"][data-layout="compact"] .font-settings-panel {
+  height: min(680px, calc(var(--visual-viewport-height, 100vh) * 0.72)) !important;
+}

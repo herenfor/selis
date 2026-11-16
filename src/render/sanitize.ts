@@ -231,7 +231,14 @@ function buildOverrideCss(s: ReaderSettings): string {
 
   // ---- L2 用户设置：字号和用户明确选择的字体。默认字体在独立低优先级层。 ----
   const escapeFamily = escapeCssString;
-  const fontFaceCss = (s.fontSource === "system" ? [] : (s.customFonts ?? []))
+  // 只注入当前被选中的字体（正文 / 标题）；跟随书籍时不留过期 @font-face。
+  const selectedFamilies = new Set<string>();
+  if (s.fontSource !== "system" && s.customFontName) selectedFamilies.add(s.customFontName);
+  if (s.splitHeadingFont === true && s.headingFontSource !== "system" && s.headingFontName) {
+    selectedFamilies.add(s.headingFontName);
+  }
+  const fontFaceCss = (s.customFonts ?? [])
+    .filter((f) => selectedFamilies.has(f.family))
     .map(
       (f) =>
         `/* [L2] 用户上传字体 */\n@font-face { font-family: "${escapeFamily(f.family)}"; src: url("${f.url}") format("truetype"); font-display: swap; }`
@@ -247,6 +254,18 @@ function buildOverrideCss(s: ReaderSettings): string {
 /* [L2] 用户开启覆盖书籍字体：选定字体覆盖正文后代（关闭时不输出）。 */
 :where(#${VIEWER_ID}) :not(pre, code, kbd, samp, tt, pre *, code *, kbd *, samp *, tt *, svg, svg *, math, math *) {
   ${bodyFontCss}
+}`
+    : "";
+  const headingFontName = s.splitHeadingFont === true ? s.headingFontName : undefined;
+  const headingFontCss = headingFontName && s.forceFontOverride === true
+    ? `font-family: "${escapeFamily(headingFontName)}" !important;`
+    : "";
+  const headingOverrideCss = headingFontCss
+    ? `
+/* [L2] 用户开启覆盖书籍字体：标题（h1–h6）使用单独选择的标题字体；代码/公式保留原字体。 */
+:where(#${VIEWER_ID}) :is(h1, h2, h3, h4, h5, h6),
+:where(#${VIEWER_ID}) :is(h1, h2, h3, h4, h5, h6) :not(pre, code, kbd, samp, tt, svg, svg *, math, math *) {
+  ${headingFontCss}
 }`
     : "";
   const writingModeCss = s.forceHorizontal === true
@@ -270,6 +289,7 @@ html, body, #${VIEWER_ID},
     fontFaceCss,
     bodyFontCss ? `body { ${bodyFontCss} }` : "",
     descendantFontCss,
+    headingOverrideCss,
     `/* [L2] PC 阅读静止隐藏指针：宿主在本文档根上切换 data-reader-cursor-idle
    （见 ui/readerCursorIdle.ts）；移动鼠标即移除。 */`,
     `:root[data-reader-cursor-idle], :root[data-reader-cursor-idle] * { cursor: none !important; }`,
@@ -773,7 +793,12 @@ ${VIEWER_TAG}#${VIEWER_ID}::-webkit-scrollbar {
   const fallbackFamily = opts.settings.customFontName
     ? `"${escapeCssString(opts.settings.customFontName)}", ${DEFAULT_FONT_FAMILY}`
     : DEFAULT_FONT_FAMILY;
-  fontFallback.textContent = `@layer epub-reader-font-fallback { :where(html) { font-family: ${fallbackFamily}; } }`;
+  const headingFallbackFamily = opts.settings.splitHeadingFont === true && opts.settings.headingFontName
+    ? `"${escapeCssString(opts.settings.headingFontName)}", ${DEFAULT_FONT_FAMILY}`
+    : null;
+  fontFallback.textContent = `@layer epub-reader-font-fallback { :where(html) { font-family: ${fallbackFamily}; }${headingFallbackFamily
+    ? ` :where(h1, h2, h3, h4, h5, h6) { font-family: ${headingFallbackFamily}; }`
+    : ""} }`;
   // XML documents (including the Node parser) do not expose HTMLDocument.head.
   const fontHead = doc.getElementsByTagName("head")[0] ?? head;
   const firstStylesheet = Array.from(fontHead.childNodes)

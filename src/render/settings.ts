@@ -21,6 +21,14 @@ export interface ReaderSettings {
   /** 选定字体也覆盖书在正文后代（div/p 等）上的字体声明；undefined/false =
    * 只作低优先级根字体，作者的 html/body/后代声明优先。代码/SVG/MathML 始终保留。 */
   forceFontOverride?: boolean;
+  /** 标题与正文分开设置字体；undefined/false = 标题沿用正文字体（现行为）。 */
+  splitHeadingFont?: boolean;
+  /** 标题（h1–h6）专用字体 family；仅 splitHeadingFont 开启时生效。 */
+  headingFontName?: string;
+  /** 标题字体来源；缺省时按 family 名直接使用。 */
+  headingFontSource?: "system" | "imported";
+  /** headingFontSource=imported 时对应的本地字体元数据 id。 */
+  headingFontId?: string;
   /** 字体来源；缺省时兼容旧版 customFontName。 */
   fontSource?: "system" | "imported";
   /** fontSource=imported 时对应的本地字体元数据 id。 */

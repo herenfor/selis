@@ -2838,6 +2838,14 @@ export default function App() {
                   customFontName={settings.customFontName}
                   forceFontOverride={settings.forceFontOverride === true}
                   onForceFontOverrideChange={settingsActions.setForceFontOverride}
+                  splitHeadingFont={settings.splitHeadingFont === true}
+                  headingFontSource={settings.headingFontSource}
+                  headingFontId={settings.headingFontId}
+                  headingFontName={settings.headingFontName}
+                  onSplitHeadingFontChange={settingsActions.setSplitHeadingFont}
+                  onSelectHeadingSystem={settingsActions.selectSystemHeadingFont}
+                  onSelectHeadingBook={settingsActions.selectHeadingBookFont}
+                  onSelectHeadingImported={settingsActions.selectImportedHeadingFont}
                   systemFonts={systemFonts}
                   userFonts={userFonts}
                   systemFontsStatus={systemFontsStatus}

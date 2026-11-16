@@ -71,6 +71,12 @@ export interface SavedSettings {
   customFontId?: string;
   /** 选定字体是否覆盖书的正文后代字体；旧设置缺省为 false */
   forceFontOverride?: boolean;
+  /** 标题与正文分开设置字体；旧设置缺省为 false（标题跟随正文） */
+  splitHeadingFont?: boolean;
+  /** 标题（h1–h6）专用字体 family */
+  headingFontName?: string;
+  headingFontSource?: "system" | "imported";
+  headingFontId?: string;
   /** 用户自定义 CSS 文本 */
   customCss?: string;
   /** 可重排章节是否强制覆盖为横排；旧设置缺省为 false */
@@ -112,6 +118,10 @@ export function toSavedReaderSettings(settings: ReaderSettings, uiScale: number)
     fontSource: settings.fontSource,
     customFontId: settings.customFontId,
     forceFontOverride: settings.forceFontOverride === true,
+    splitHeadingFont: settings.splitHeadingFont === true,
+    headingFontName: settings.headingFontName,
+    headingFontSource: settings.headingFontSource,
+    headingFontId: settings.headingFontId,
     customCss: settings.customCss,
     forceHorizontal: settings.forceHorizontal === true,
     txtIndent: settings.txtIndent === true,

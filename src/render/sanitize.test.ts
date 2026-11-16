@@ -1090,4 +1090,87 @@ background-position:center center;background-size:cover;background-color:#f9ebdf
     });
     expect(out).toContain('img { box-shadow: none !important; }');
   });
+
+  it("标题与正文分开：关闭覆盖时标题字体只进低优先级回退层", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head><style>h1 { font-family: BookTitle; }</style></head><body><h1>标题</h1><p>正文</p></body></html>`;
+    const { html: out } = await sanitizeChapter(html, {
+      ...opts(),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        splitHeadingFont: true,
+        customFontName: "BodyFont",
+        fontSource: "system",
+        headingFontName: "TitleFont",
+        headingFontSource: "system",
+        forceFontOverride: false,
+      },
+    });
+    const fallback = readStyleText(out, "font-fallback");
+    expect(fallback).toContain(':where(html) { font-family: "BodyFont"');
+    expect(fallback).toContain(':where(h1, h2, h3, h4, h5, h6) { font-family: "TitleFont"');
+    // 关闭覆盖时不写正文/标题的强覆盖，书的 h1 字体仍然优先。
+    expect(readStyleText(out, "overrides")).not.toMatch(/font-family:\s*"TitleFont"/);
+    expect(out).toContain("h1 { font-family: BookTitle; }");
+  });
+
+  it("标题与正文分开：开启覆盖后 h1–h6 用标题字体，代码与公式保留", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>标题</h1><p>正文</p><pre><code>x</code></pre></body></html>`;
+    const { html: out } = await sanitizeChapter(html, {
+      ...opts(),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        splitHeadingFont: true,
+        customFontName: "BodyFont",
+        fontSource: "system",
+        headingFontName: "TitleFont",
+        headingFontSource: "system",
+        forceFontOverride: true,
+      },
+    });
+    const overrides = readStyleText(out, "overrides");
+    expect(overrides).toContain(":where(#epub-viewer) :is(h1, h2, h3, h4, h5, h6)");
+    expect(overrides).toContain('font-family: "TitleFont" !important;');
+    const headingRule = overrides.match(/:where\(#epub-viewer\) :is\(h1, h2, h3, h4, h5, h6\) :not\(([^)]*)\) \{/);
+    expect(headingRule).not.toBeNull();
+    for (const kept of ["pre", "code", "svg", "svg *", "math *"]) {
+      expect(headingRule![1].split(",").map((part) => part.trim())).toContain(kept);
+    }
+    // 标题规则必须排在正文后代规则之后，同等 !important 时由顺序取胜。
+    expect(overrides.indexOf('"TitleFont" !important')).toBeGreaterThan(overrides.indexOf('"BodyFont" !important'));
+  });
+
+  it("未开启标题单独设置时忽略标题字体字段（现行为）", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>标题</h1><p>正文</p></body></html>`;
+    const { html: out } = await sanitizeChapter(html, {
+      ...opts(),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        splitHeadingFont: false,
+        customFontName: "BodyFont",
+        fontSource: "system",
+        headingFontName: "TitleFont",
+        headingFontSource: "system",
+        forceFontOverride: true,
+      },
+    });
+    expect(readStyleText(out, "overrides")).not.toMatch(/font-family:\s*"TitleFont"/);
+    expect(readStyleText(out, "font-fallback")).not.toContain(":where(h1, h2, h3, h4, h5, h6)");
+  });
+
+  it("标题专用导入字体在正文跟随时也注入 @font-face", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>标题</h1><p>正文</p></body></html>`;
+    const { html: out } = await sanitizeChapter(html, {
+      ...opts(),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        splitHeadingFont: true,
+        headingFontName: "TitleFont",
+        headingFontSource: "imported",
+        customFonts: [{ family: "TitleFont", url: "blob:title-font" }],
+        forceFontOverride: false,
+      },
+    });
+    expect(out).toContain('@font-face { font-family: "TitleFont";');
+    expect(out).toContain('src: url("blob:title-font")');
+  });
 });

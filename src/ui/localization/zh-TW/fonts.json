@@ -22,5 +22,14 @@
   "fonts.importing": "正在匯入字型…",
   "fonts.dropRelease": "鬆開以匯入字型",
   "fonts.dropHint": "可拖入 TTF、OTF、WOFF 或 WOFF2 字型",
-  "fonts.import": "＋ 匯入字型"
+  "fonts.import": "＋ 匯入字型",
+  "fonts.split": "標題與內文分開",
+  "fonts.split.hint": "開啟後可單獨選擇標題（h1–h6）字型；關閉時標題跟隨內文。覆蓋書籍字型的開關對兩者同時生效。",
+  "fonts.role": "設定對象",
+  "fonts.role.body": "內文",
+  "fonts.role.heading": "標題",
+  "fonts.followBody": "跟隨內文",
+  "fonts.current.heading": "目前標題字型：{name}",
+  "fonts.override.hint.split": "關閉時，兩種字型都只取代書未指定字型的文字；開啟後內文與標題分別改用各自所選字型，程式碼與公式保留原字型。",
+  "fonts.override.hint.short": "關閉只補書裡缺的字型；開啟強制取代內文與標題（程式碼與公式除外）。"
 }

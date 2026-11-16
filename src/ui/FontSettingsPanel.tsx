@@ -2,10 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent }
 import type { SystemFont, UserFont } from "./fontStore";
 import { createDragDepthTracker } from "./fontDrop";
 import { ArrowLeftIcon } from "./readerIcons";
+import { CheckIcon, CloseIcon } from "./shelfView/icons";
 import { useSheetDrag } from "./sheetDrag";
 import { useScrollEdgeFade } from "./scrollEdgeFade";
 import { useUiText } from "./localization/UiLanguageProvider";
 import "./aaPopover.css";
+import "./fontSettings.css";
 import { Switch } from "./controls/Switch";
 import { Segmented } from "./controls/Segmented";
 
@@ -15,6 +17,15 @@ export interface FontSettingsPanelProps {
   customFontName?: string;
   forceFontOverride?: boolean;
   onForceFontOverrideChange?(enabled: boolean): void;
+  /** 标题与正文分开设置；关闭时标题沿用正文字体（现行为）。 */
+  splitHeadingFont?: boolean;
+  headingFontSource?: "system" | "imported";
+  headingFontId?: string;
+  headingFontName?: string;
+  onSplitHeadingFontChange?(enabled: boolean): void;
+  onSelectHeadingSystem?(family: string): void;
+  onSelectHeadingBook?(): void;
+  onSelectHeadingImported?(font: UserFont): void;
   systemFonts: SystemFont[];
   userFonts: UserFont[];
   busy: boolean;
@@ -22,7 +33,7 @@ export interface FontSettingsPanelProps {
   onSelectBook(): void;
   onSelectImported(font: UserFont): void;
   onDelete(id: string): void;
-  onImport(files: File[]): Promise<void> | void;
+  onImport(files: File[], role?: "body" | "heading"): Promise<void> | void;
   onClose(): void;
   nativeDragActive?: boolean;
   systemFontsStatus?: "idle" | "loading" | "ready" | "error";
@@ -60,6 +71,7 @@ export function visibleFontWindow<T>(items: readonly T[], offset: number, size: 
 export function FontSettingsPanel(props: FontSettingsPanelProps) {
   const { t } = useUiText();
   const [query, setQuery] = useState("");
+  const [role, setRole] = useState<"body" | "heading">("body");
   const [tab, setTab] = useState<"system" | "imported">("system");
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(520);
@@ -72,6 +84,24 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
   useEffect(() => {
     if (props.systemFontsStatus === "idle") props.onLoadSystemFonts?.();
   }, [props.systemFontsStatus, props.onLoadSystemFonts]);
+  const split = props.splitHeadingFont === true;
+  const activeRole = split ? role : "body";
+  const roleSource = activeRole === "heading" ? props.headingFontSource : props.source;
+  const roleFontId = activeRole === "heading" ? props.headingFontId : props.customFontId;
+  const roleFontName = activeRole === "heading" ? props.headingFontName : props.customFontName;
+  const followLabel = activeRole === "heading" ? t("fonts.followBody") : t("fonts.followBook");
+  const selectFollow = (): void => {
+    if (activeRole === "heading") props.onSelectHeadingBook?.();
+    else props.onSelectBook();
+  };
+  const selectSystem = (family: string): void => {
+    if (activeRole === "heading") props.onSelectHeadingSystem?.(family);
+    else props.onSelectSystem(family);
+  };
+  const selectImported = (font: UserFont): void => {
+    if (activeRole === "heading") props.onSelectHeadingImported?.(font);
+    else props.onSelectImported(font);
+  };
   const normalized = query.trim().toLocaleLowerCase();
   const systems = useMemo(() => props.systemFonts.filter((font) => {
     if (!normalized) return true;
@@ -111,11 +141,14 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
     setScrollTop(0);
   };
   const selectTab = (next: "system" | "imported") => { setTab(next); resetScroll(); };
+  useEffect(() => {
+    if (!split) setRole("body");
+  }, [split]);
   const importFiles = async (files: File[]) => {
     if (props.busy || dropBusy || files.length === 0) return;
     setDropBusy(true);
     try {
-      await props.onImport(files);
+      await props.onImport(files, activeRole);
     } finally {
       setDropBusy(false);
     }
@@ -155,47 +188,96 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
       </button>
       <span className="aa-subpage-title">{t("fonts.title")}</span>
     </div>
-    <div className="font-settings-current">
-      {t("fonts.current", { name: (props.source === "system" || props.source === "imported" ? props.customFontName : undefined) ?? t("fonts.followBook") })}
-    </div>
+
+    {(props.onSplitHeadingFontChange || props.onForceFontOverrideChange) && (
+      <div className="font-settings-options">
+        {props.onSplitHeadingFontChange && (
+          <label className="font-settings-option" title={t("fonts.split.hint")}>
+            <span>{t("fonts.split")}</span>
+            <Switch inRow checked={split} onChange={(checked) => {
+              props.onSplitHeadingFontChange?.(checked);
+              if (!checked) setRole("body");
+            }} />
+          </label>
+        )}
+        {props.onForceFontOverrideChange && (
+          <label className="font-settings-option" title={t(split ? "fonts.override.hint.split" : "fonts.override.hint")}>
+            <span>{t("fonts.override")}</span>
+            <Switch inRow checked={props.forceFontOverride === true} disabled={!props.source && !(split && props.headingFontName)}
+              onChange={(checked) => props.onForceFontOverrideChange?.(checked)} />
+          </label>
+        )}
+        {props.onForceFontOverrideChange && (
+          <p className="font-settings-option-hint" title={split ? t("fonts.override.hint.split") : t("fonts.override.hint")}>
+            {t("fonts.override.hint.short")}
+          </p>
+        )}
+      </div>
+    )}
+
+    {split && (
+      <div className="font-settings-rolebar">
+        <span className="font-settings-rolebar-label">{t("fonts.role")}</span>
+        <Segmented label={t("fonts.role")} value={role} className="font-settings-tabs font-settings-roles"
+          options={[
+            { value: "body", label: t("fonts.role.body") },
+            { value: "heading", label: t("fonts.role.heading") },
+          ]}
+          onChange={(next) => { setRole(next); resetScroll(); }} />
+      </div>
+    )}
+
     <div className="font-settings-toolbar">
       <input className="font-search" type="search" placeholder={t("fonts.search")} aria-label={t("fonts.search")} value={query}
         onChange={(event) => { setQuery(event.target.value); resetScroll(); }} />
       <button type="button" className="font-import-btn" onClick={() => inputRef.current?.click()} disabled={effectiveBusy}>{effectiveBusy ? t("fonts.importing") : t("fonts.import")}</button>
     </div>
-    <div className="font-settings-filter">
-      <Segmented label={t("fonts.tabs")} value={tab} className="font-settings-tabs"
-        options={[
-          { value: "system", label: t("fonts.tab.system", { count: systems.length }) },
-          { value: "imported", label: t("fonts.tab.imported", { count: imported.length }) },
-        ]}
-        onChange={selectTab} />
-      {props.onForceFontOverrideChange && <label className="font-override-switch" title={t("fonts.override.hint")}>
-        <span>{t("fonts.override")}</span>
-        <Switch inRow checked={props.forceFontOverride === true} disabled={!props.source}
-          onChange={(checked) => props.onForceFontOverrideChange?.(checked)} />
-      </label>}
+
+    <Segmented label={t("fonts.tabs")} value={tab} className="font-settings-tabs font-settings-source"
+      options={[
+        { value: "system", label: t("fonts.tab.system", { count: systems.length }) },
+        { value: "imported", label: t("fonts.tab.imported", { count: imported.length }) },
+      ]}
+      onChange={selectTab} />
+
+    <div className={`font-settings-row-wrap font-follow-book${!roleSource ? " active" : ""}`}>
+      <button className="font-settings-row" onClick={selectFollow}>{followLabel}</button>
+      <span className="font-settings-row-mark" aria-hidden="true">{!roleSource ? <CheckIcon /> : null}</span>
     </div>
-    {props.onForceFontOverrideChange && <span className="font-settings-override-hint">{t("fonts.override.hint")}</span>}
-    <button className={`font-settings-row font-follow-book${!props.source ? " active" : ""}`} onClick={props.onSelectBook}>{t("fonts.followBook")}{!props.source ? " ✓" : ""}</button>
+
     <div ref={scrollRef} className="font-settings-scroll scrollbar-hidden" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
       {tab === "system" && props.systemFontsStatus === "loading" && <div className="font-empty">{t("fonts.system.loading")}</div>}
       {tab === "system" && props.systemFontsStatus === "error" && <div className="font-empty">{t("fonts.system.failed", { error: props.systemFontsError ?? t("fonts.unknownError") })}<br /><button className="menu-item" onClick={props.onLoadSystemFonts}>{t("fonts.retry")}</button></div>}
-      {tab === "system" && props.systemFontsStatus !== "loading" && props.systemFontsStatus !== "error" && props.source === "system" && props.customFontName && props.systemFontsStatus === "ready" && !systems.some((font) => font.family === props.customFontName) && <div className="font-empty">{t("fonts.unavailable", { name: props.customFontName })}</div>}
+      {tab === "system" && props.systemFontsStatus !== "loading" && props.systemFontsStatus !== "error" && roleSource === "system" && roleFontName && props.systemFontsStatus === "ready" && !systems.some((font) => font.family === roleFontName) && <div className="font-empty">{t("fonts.unavailable", { name: roleFontName })}</div>}
       {tab === "system" && systems.length === 0 && props.systemFontsStatus === "ready" && <div className="font-empty">{t("fonts.system.none")}</div>}
       {tab === "imported" && imported.length === 0 && <div className="font-empty">{t("fonts.imported.none")}</div>}
       <div style={{ height: virtual.totalHeight, position: "relative" }}>
         <div style={{ height: virtual.top }} />
-      {virtual.items.map((font) => tab === "system" ? <button key={(font as unknown as SystemFont).family}
-        className={`font-settings-row${props.source === "system" && props.customFontName === font.family ? " active" : ""}`}
-        onClick={() => props.onSelectSystem((font as unknown as SystemFont).family)}>{(font as unknown as SystemFont).family}{props.source === "system" && props.customFontName === (font as unknown as SystemFont).family ? " ✓" : ""}</button> : <div key={(font as UserFont).id} className="font-settings-row-wrap">
-        <button className={`font-settings-row${props.source === "imported" && props.customFontId === (font as UserFont).id ? " active" : ""}`}
-          onClick={() => props.onSelectImported(font as UserFont)} title={(font as UserFont).fileName}>{(font as UserFont).family}{props.customFontId === (font as UserFont).id ? " ✓" : ""}</button>
-        <button className="font-delete" onClick={() => props.onDelete((font as UserFont).id)} disabled={effectiveBusy} title={t("fonts.delete")}>✕</button>
-      </div>)}
+        {virtual.items.map((font) => {
+          if (tab === "system") {
+            const family = (font as SystemFont).family;
+            const active = roleSource === "system" && roleFontName === family;
+            return (
+              <div key={family} className={`font-settings-row-wrap${active ? " active" : ""}`}>
+                <button className="font-settings-row" onClick={() => selectSystem(family)}>{family}</button>
+                <span className="font-settings-row-mark" aria-hidden="true">{active ? <CheckIcon /> : null}</span>
+              </div>
+            );
+          }
+          const item = font as UserFont;
+          const active = roleSource === "imported" && roleFontId === item.id;
+          return (
+            <div key={item.id} className={`font-settings-row-wrap${active ? " active" : ""}`}>
+              <button className="font-settings-row" onClick={() => selectImported(item)} title={item.fileName}>{item.family}</button>
+              <span className="font-settings-row-mark" aria-hidden="true">{active ? <CheckIcon /> : null}</span>
+              <button className="font-delete" onClick={() => props.onDelete(item.id)} disabled={effectiveBusy} title={t("fonts.delete")} aria-label={t("fonts.delete")}><CloseIcon /></button>
+            </div>
+          );
+        })}
         <div style={{ height: virtual.bottom }} />
       </div>
     </div>
+
     <div className="font-drop-zone" aria-live="polite" aria-label={t("fonts.drop")}>
       {effectiveBusy ? t("fonts.importing") : dragActive ? t("fonts.dropRelease") : t("fonts.dropHint")}
     </div>

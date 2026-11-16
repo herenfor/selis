@@ -22,5 +22,14 @@
   "fonts.importing": "Importing fonts...",
   "fonts.dropRelease": "Release to import fonts",
   "fonts.dropHint": "Supports TTF, OTF, WOFF, or WOFF2 fonts",
-  "fonts.import": "＋ Import Font"
+  "fonts.import": "＋ Import Font",
+  "fonts.split": "Separate heading font",
+  "fonts.split.hint": "When on, choose a heading (h1–h6) font separately; when off headings follow body text. Override Book Fonts applies to both.",
+  "fonts.role": "Font role",
+  "fonts.role.body": "Body",
+  "fonts.role.heading": "Heading",
+  "fonts.followBody": "Follow body",
+  "fonts.current.heading": "Current heading font: {name}",
+  "fonts.override.hint.split": "When off, both fonts only replace text without a book-specified font. When on, body and headings use their own fonts; code and formulas keep their original fonts.",
+  "fonts.override.hint.short": "Off: fill only missing fonts. On: force the chosen fonts on body and headings (code and formulas excluded)."
 }

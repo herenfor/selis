@@ -348,6 +348,7 @@ describe("readerTheme: 纯颜色与在位更新核心", () => {
 
     // 5. 字体改变 -> 走 layout 重排
     expect(classifySettingsChange(base, { ...base, fontFamily: "sans-serif" })).toBe("layout");
+    expect(classifySettingsChange(base, { ...base, splitHeadingFont: true, headingFontName: "Title" })).toBe("layout");
 
     // 6. userFonts 改变 -> 走 layout 重排
     expect(classifySettingsChange(base, base, "fontsA", "fontsB")).toBe("layout");

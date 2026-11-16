@@ -35,6 +35,10 @@ export function useReaderSettings() {
       fontSource: saved.fontSource === "system" || saved.fontSource === "imported" ? saved.fontSource : undefined,
       customFontId: saved.customFontId,
       forceFontOverride: saved.forceFontOverride === true,
+      splitHeadingFont: saved.splitHeadingFont === true,
+      headingFontName: saved.headingFontName,
+      headingFontSource: saved.headingFontSource === "system" || saved.headingFontSource === "imported" ? saved.headingFontSource : undefined,
+      headingFontId: saved.headingFontId,
       customCss: saved.customCss,
       forceHorizontal: saved.forceHorizontal === true,
       txtIndent: saved.txtIndent === true,
@@ -98,6 +102,13 @@ export function useReaderSettings() {
       setSeamlessChapterTurn: (enabled: boolean) => setSettings((s2) => ({ ...s2, seamlessChapterTurn: enabled })),
       setCustomCss: (css: string) => setSettings((s2) => ({ ...s2, customCss: css })),
       setForceFontOverride: (enabled: boolean) => setSettings((s) => ({ ...s, forceFontOverride: enabled })),
+      setSplitHeadingFont: (enabled: boolean) => setSettings((s) => ({ ...s, splitHeadingFont: enabled })),
+      selectSystemHeadingFont: (family: string) =>
+        setSettings((s) => ({ ...s, headingFontSource: "system", headingFontName: family, headingFontId: undefined })),
+      selectHeadingBookFont: () =>
+        setSettings((s) => ({ ...s, headingFontSource: undefined, headingFontName: undefined, headingFontId: undefined })),
+      selectImportedHeadingFont: (font: Pick<UserFont, "id" | "family">) =>
+        setSettings((s) => ({ ...s, headingFontSource: "imported", headingFontId: font.id, headingFontName: font.family })),
       selectSystemFont: (family: string) =>
         setSettings((s) => ({ ...s, fontSource: "system", customFontName: family, customFontId: undefined })),
       selectBookFont: () =>

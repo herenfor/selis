@@ -330,6 +330,10 @@ const SETTING_KEYS = new Set([
   "lineHeight", "fontWeight", "letterSpacingPx", "wordSpacingPx", "uiScale",
   "forceHorizontal",
   "forceFontOverride",
+  "splitHeadingFont",
+  "headingFontName",
+  "headingFontSource",
+  "headingFontId",
   "preloadNextChapter",
 ]);
 

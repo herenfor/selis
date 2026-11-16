@@ -26,4 +26,13 @@ export const fonts = defineMessages("fonts", {
   "fonts.dropRelease": "松开以导入字体",
   "fonts.dropHint": "可拖入 TTF、OTF、WOFF 或 WOFF2 字体",
   "fonts.import": { zh: "＋ 导入字体", note: "Button; keep the plus sign." },
+  "fonts.split": { zh: "标题与正文分开", note: "Switch: set a heading font separately from body text.", max: 10 },
+  "fonts.split.hint": { zh: "开启后可单独选择标题（h1–h6）字体；关闭时标题跟随正文。覆盖书籍字体的开关对两者同时生效。" },
+  "fonts.role": { zh: "设置对象", note: "Accessible name for the body/heading font role selector." },
+  "fonts.role.body": "正文",
+  "fonts.role.heading": "标题",
+  "fonts.followBody": { zh: "跟随正文", note: "Heading uses the body font." },
+  "fonts.current.heading": { zh: "当前标题字体：{name}" },
+  "fonts.override.hint.split": { zh: "关闭时，两种字体都只替换书未指定字体的文字；开启后正文与标题分别改用各自所选字体，代码与公式保留原字体。" },
+  "fonts.override.hint.short": { zh: "关闭只补书里缺的字体；开启强制替换正文与标题（代码与公式除外）。" },
 });

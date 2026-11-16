@@ -382,6 +382,10 @@ export function sameLayoutSettings(a: ReaderSettings, b: ReaderSettings): boolea
     a.fontSource === b.fontSource &&
     a.customFontId === b.customFontId &&
     (a.forceFontOverride === true) === (b.forceFontOverride === true) &&
+    (a.splitHeadingFont === true) === (b.splitHeadingFont === true) &&
+    a.headingFontName === b.headingFontName &&
+    a.headingFontSource === b.headingFontSource &&
+    a.headingFontId === b.headingFontId &&
     a.customFonts === b.customFonts &&
     a.customCss === b.customCss &&
     a.gapPx === b.gapPx &&
