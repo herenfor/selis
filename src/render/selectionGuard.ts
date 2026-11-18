@@ -53,3 +53,68 @@ export function restorePagedViewerScroll(
   writePageScroll(viewer, expectedLogicalScroll, progression);
   return true;
 }
+
+export interface PagedScrollGuardContext {
+  readonly doc: Document | null | undefined;
+  readonly viewer: Pick<HTMLElement, "scrollLeft"> | null | undefined;
+  readonly scrollMode: boolean;
+  readonly displayReady: boolean;
+  readonly nativeSnapArmed: boolean;
+  readonly progression: PageProgression;
+  /** Authorized logical scrollLeft locked by an active compositor window, or null in resting geometry. */
+  readonly windowScroll?: number | null;
+}
+
+/**
+ * Single source of truth for authorized resting `viewer.scrollLeft` in paginated mode.
+ *
+ * All resting paginated writes flow through `write()` so the guard's expected offset
+ * updates atomically with `viewer.scrollLeft` (across `setPage`, reflows, and `TransformPageMotion.settleTo`).
+ * While an active compositor motion window owns `viewer.scrollLeft`, `guard()` checks against `windowScroll`.
+ */
+export class PagedScrollGuard {
+  private expectedScroll: number | null = null;
+
+  get expected(): number | null {
+    return this.expectedScroll;
+  }
+
+  /** Write a resting paginated scroll offset and record the normalized viewer position. */
+  write(
+    viewer: Pick<HTMLElement, "scrollLeft"> | null | undefined,
+    logicalScroll: number,
+    progression: PageProgression,
+  ): number {
+    if (!viewer) return 0;
+    writePageScroll(viewer, logicalScroll, progression);
+    const actual = readPageScroll(viewer, progression);
+    this.expectedScroll = actual;
+    return actual;
+  }
+
+  /** Adopt the viewer's current resting offset as authorized (e.g. initial display or native snap settle). */
+  syncFromViewer(
+    viewer: Pick<HTMLElement, "scrollLeft"> | null | undefined,
+    scrollMode: boolean,
+    progression: PageProgression,
+  ): void {
+    this.expectedScroll = viewer && !scrollMode ? readPageScroll(viewer, progression) : null;
+  }
+
+  /** Clear authorized scroll state when tearing down or leaving a chapter document. */
+  clear(): void {
+    this.expectedScroll = null;
+  }
+
+  /** Reset leaked root scroll offsets and restore unauthorized paginated viewer drift. */
+  guard(ctx: PagedScrollGuardContext): boolean {
+    let changed = resetRootScrollOffsets(ctx.doc);
+    if (ctx.scrollMode || !ctx.displayReady || ctx.nativeSnapArmed) return changed;
+    const expected =
+      typeof ctx.windowScroll === "number" && Number.isFinite(ctx.windowScroll)
+        ? ctx.windowScroll
+        : this.expectedScroll;
+    if (restorePagedViewerScroll(ctx.viewer, expected, ctx.progression)) changed = true;
+    return changed;
+  }
+}

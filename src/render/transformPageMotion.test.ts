@@ -172,6 +172,57 @@ describe("transform page motion driver", () => {
     expect(viewer.style.getPropertyValue("width")).toBe("100px");
     expect(faults).toEqual([]);
   });
+  it("zero-duration settle inside the window holds the retained window without tearing down geometry", () => {
+    const viewer = fakeViewer();
+    const settledWrites: number[] = [];
+    const driver = new TransformPageMotion(
+      viewer as unknown as HTMLElement,
+      layout,
+      300,
+      () => {},
+      (pos) => { settledWrites.push(pos); viewer.scrollLeft = pos; },
+    );
+    driver.write(400);
+    expect(driver.active).toBe(true);
+    viewer.events.length = 0;
+
+    let done = 0;
+    driver.animateTo(400, { durationMs: 0, tauMs: 90 }, () => done++);
+    expect(done).toBe(1);
+    expect(driver.active).toBe(true);
+    expect(settledWrites).toEqual([]);
+    expect(viewer.events.filter((e) => /(?:width|column-count|margin-left|scrollLeft)=/.test(e))).toEqual([]);
+    expect(driver.read().position).toBe(400);
+
+    // Exiting beyond the window routes through writeRestScroll atomically.
+    driver.animateTo(900, desktopSettlePlan(500, 100), () => done++);
+    expect(done).toBe(2);
+    expect(driver.active).toBe(false);
+    expect(settledWrites).toEqual([900]);
+    expect(viewer.scrollLeft).toBe(900);
+  });
+
+  it("viewer.animate throwing after fault disposal cannot overwrite the fallback position", () => {
+    const viewer = fakeViewer();
+    viewer.animate = () => { throw new Error("WAAPI unavailable"); };
+    const settledWrites: number[] = [];
+    const driver = new TransformPageMotion(
+      viewer as unknown as HTMLElement,
+      layout,
+      300,
+      () => {
+        driver.dispose();
+        viewer.scrollLeft = 300;
+      },
+      (pos) => { settledWrites.push(pos); viewer.scrollLeft = pos; },
+    );
+    let completed = 0;
+    driver.animateTo(400, desktopSettlePlan(100, 100), () => completed++);
+    expect(completed).toBe(0);
+    expect(viewer.scrollLeft).toBe(300);
+    expect(settledWrites).toEqual([300]);
+  });
+
   it("a burst beyond the bounded window commits its full target without showing clipped content", () => {
     const viewer = fakeViewer();
     const driver = new TransformPageMotion(viewer as unknown as HTMLElement, layout, 300, () => {});

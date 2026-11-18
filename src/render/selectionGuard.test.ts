@@ -1,6 +1,6 @@
 import { parseHTML } from "linkedom";
 import { describe, expect, it, vi } from "vitest";
-import { clearDocumentSelection, isSelectAllShortcut, resetRootScrollOffsets, restorePagedViewerScroll } from "./selectionGuard";
+import { clearDocumentSelection, isSelectAllShortcut, PagedScrollGuard, resetRootScrollOffsets, restorePagedViewerScroll } from "./selectionGuard";
 
 function event(target: EventTarget, overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
   return { key: "a", ctrlKey: true, metaKey: false, target, ...overrides } as KeyboardEvent;
@@ -58,5 +58,48 @@ describe("selection keyboard guard", () => {
     expect(restorePagedViewerScroll(rtlViewer, 1152, "rtl")).toBe(true);
     expect(rtlViewer.scrollLeft).toBe(-1152);
     expect(restorePagedViewerScroll(rtlViewer, null, "ltr")).toBe(false);
+  });
+
+  it("tracks resting writes atomically and switches smoothly between window and settled guard", () => {
+    const guard = new PagedScrollGuard();
+    const doc = {
+      documentElement: { scrollLeft: 0, scrollTop: 0 },
+      body: { scrollLeft: 14, scrollTop: 0 },
+    } as unknown as Document;
+    const viewer = { scrollLeft: 0 };
+
+    expect(guard.write(viewer, 600, "ltr")).toBe(600);
+    expect(guard.expected).toBe(600);
+
+    // Active window lock takes precedence over resting offset.
+    viewer.scrollLeft = 450;
+    expect(guard.guard({
+      doc, viewer, scrollMode: false, displayReady: true, nativeSnapArmed: false,
+      progression: "ltr", windowScroll: 200,
+    })).toBe(true);
+    expect(doc.body.scrollLeft).toBe(0);
+    expect(viewer.scrollLeft).toBe(200);
+
+    // Once window exits via resting write (or falls back to resting geometry), resting target protects new page.
+    guard.write(viewer, 900, "ltr");
+    viewer.scrollLeft = 1100;
+    expect(guard.guard({
+      doc, viewer, scrollMode: false, displayReady: true, nativeSnapArmed: false,
+      progression: "ltr", windowScroll: null,
+    })).toBe(true);
+    expect(viewer.scrollLeft).toBe(900);
+
+    // Skips viewer correction while native snap is armed or cleared.
+    viewer.scrollLeft = 980;
+    expect(guard.guard({
+      doc, viewer, scrollMode: false, displayReady: true, nativeSnapArmed: true,
+      progression: "ltr", windowScroll: null,
+    })).toBe(false);
+    expect(viewer.scrollLeft).toBe(980);
+
+    guard.syncFromViewer(viewer, false, "ltr");
+    expect(guard.expected).toBe(980);
+    guard.clear();
+    expect(guard.expected).toBeNull();
   });
 });
