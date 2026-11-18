@@ -15,6 +15,7 @@ External contributors: please open an issue first to align on scope; see LICENSI
 ## 影响范围 / Affected
 
 - [ ] Windows
+- [ ] Linux
 - [ ] Android 手机 / phone
 - [ ] Android 平板 / tablet
 - [ ] 仅构建、脚本或文档 / Build, scripts or docs only
@@ -22,8 +23,9 @@ External contributors: please open an issue first to align on scope; see LICENSI
 ## 怎么验证的 / How it was checked
 
 - [ ] 类型检查通过 / Type check passes (`pnpm exec tsc --noEmit`)
-- [ ] 相关测试通过 / Related tests pass (`pnpm test`)
+- [ ] 相关测试通过 / Related tests pass (`pnpm test <file.test.ts>`)
 - [ ] Windows 实机看过 / Checked on Windows
+- [ ] Linux 原生环境看过 / Checked on Linux
 - [ ] Android 实机看过 / Checked on an Android device
 
 <!-- 写下实际看过的步骤和结果。List what you actually tried and saw. -->
