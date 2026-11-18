@@ -60,6 +60,7 @@ export class TransformPageMotion implements PageMotionDriver {
     private readonly layout: TransformMotionLayout,
     initialPosition: number,
     private readonly onFault: (error: unknown) => void,
+    private readonly writeRestScroll?: (position: number) => void,
   ) {
     this.held = initialPosition;
     this.progression = layout.progression ?? "ltr";
@@ -126,12 +127,18 @@ export class TransformPageMotion implements PageMotionDriver {
     const from = this.windowStart === null ? readPageScroll(this.viewer, this.progression) : this.held;
     this.held = from;
     const ticket = ++this.generation;
-    if (plan.durationMs <= 0 || !this.ensureWindow(Math.min(from, position), Math.max(from, position))) {
+    if (!this.ensureWindow(Math.min(from, position), Math.max(from, position))) {
       // A fault may synchronously dispose this driver and transfer ownership.
       if (this.disposed) return;
       // Extremely fast repeated inputs may span more than the bounded window.
       // Commit that target in normal geometry instead of exposing a clipped blank.
       this.settleTo(position);
+      done();
+      return;
+    }
+    if (plan.durationMs <= 0) {
+      // Target is already settled inside the retained compositor window; hold without tearing down geometry.
+      this.holdSettledAt(position);
       done();
       return;
     }
@@ -155,6 +162,7 @@ export class TransformPageMotion implements PageMotionDriver {
       });
     } catch (error) {
       this.onFault(error);
+      if (this.disposed) return;
       this.settleTo(position);
       done();
       return;
@@ -182,12 +190,13 @@ export class TransformPageMotion implements PageMotionDriver {
 
   /** 落定只更新视觉位置；窗口由分页器的空闲租约或显式导航撤除。 */
   holdSettledAt(position: number): void {
+    if (this.disposed) return;
     ++this.generation;
     const previous = this.animation;
     this.animation = null;
     this.held = position;
     if (this.windowStart !== null) this.applyTransform();
-    else writePageScroll(this.viewer, position, this.progression);
+    else this.writeSettledScroll(position);
     this.holdCompanions(position);
     previous?.cancel();
   }
@@ -197,6 +206,7 @@ export class TransformPageMotion implements PageMotionDriver {
    * 完成，屏幕只会看到同一位置（不闪回、不残留旧惯性）。
    */
   settleTo(position: number): void {
+    if (this.disposed) return;
     ++this.generation;
     const previous = this.animation;
     this.animation = null;
@@ -206,9 +216,14 @@ export class TransformPageMotion implements PageMotionDriver {
       this.restoreInline?.();
       this.restoreInline = null;
     }
-    writePageScroll(this.viewer, position, this.progression);
+    this.writeSettledScroll(position);
     this.holdCompanions(position);
     previous?.cancel();
+  }
+
+  private writeSettledScroll(position: number): void {
+    if (this.writeRestScroll) this.writeRestScroll(position);
+    else writePageScroll(this.viewer, position, this.progression);
   }
 
   /** 换一组伴随元素：立即按当前位置摆好（旧的一组保持最后的位置，由宿主收回）。 */
@@ -249,14 +264,16 @@ export class TransformPageMotion implements PageMotionDriver {
     this.cancelCompanionAnimations();
     for (const companion of this.companions) {
       try {
-        this.companionAnimations.push(companion.element.animate(samples.map((sample) => ({
+        const animation = companion.element.animate(samples.map((sample) => ({
           transform: this.companionTransform(companion, sample.position),
           ...(sample.offset === undefined ? {} : { offset: sample.offset }),
         })), {
           duration: durationMs,
           easing: desktop ? "cubic-bezier(0.3333333333, 1, 0.6666666667, 1)" : "linear",
           fill: "both",
-        }));
+        });
+        void animation.finished?.catch?.(() => {});
+        this.companionAnimations.push(animation);
       } catch {
         // 伴随元素只是显示；动画建不起来时停在终点，主运动不受影响。
         companion.element.style.setProperty("transform", this.companionTransform(companion, samples[samples.length - 1].position));

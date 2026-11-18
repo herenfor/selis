@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChapterPaginator } from "./paginator";
 import { MotionWindowIdleLease } from "./motionWindowIdleLease";
+import { TransformPageMotion } from "./transformPageMotion";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -266,10 +267,10 @@ describe("paginator retained motion window", () => {
     expect(p.contentDoc.documentElement.scrollLeft).toBe(0);
     expect(p.viewer.scrollLeft).toBe(200);
 
-    // 2) 退出窗口到普通几何后，scroll 事件仍按 expectedPagedScroll 守卫
+    // 2) 退出窗口到普通几何后，scroll 事件仍按写入基线守卫
     p.pageMotion.driver.active = false;
     p.pageMotion.driver.windowScroll = null;
-    p.expectedPagedScroll = 400;
+    p.writePagedScroll(400);
     p.viewer.scrollLeft = 720;
     p.contentDoc.body.scrollLeft = 90;
     p.handleScroll();
@@ -281,5 +282,167 @@ describe("paginator retained motion window", () => {
     p.viewer.scrollLeft = 450;
     p.handleScroll();
     expect(p.viewer.scrollLeft).toBe(450);
+  });
+
+  it("快翻超 4 屏退窗后异步 scroll 事件不回滚到章首，且新页仍受选区漂移守卫", () => {
+    let widthPx = 100;
+    let marginLeftPx = 0;
+    let scrollLeft = 0;
+    const styleMap = new Map<string, { value: string; priority: string }>([["width", { value: "100px", priority: "" }]]);
+    const viewer = {
+      clientWidth: 100,
+      clientLeft: 0,
+      get scrollWidth() { return Math.max(1000, widthPx); },
+      get scrollLeft() { return scrollLeft; },
+      set scrollLeft(v: number) { scrollLeft = v; },
+      style: {
+        getPropertyValue: (n: string) => styleMap.get(n)?.value ?? "",
+        getPropertyPriority: (n: string) => styleMap.get(n)?.priority ?? "",
+        setProperty: (n: string, v: string, p = "") => {
+          styleMap.set(n, { value: v, priority: p });
+          if (n === "width") widthPx = Number.parseFloat(v) || 100;
+          if (n === "margin-left") marginLeftPx = Number.parseFloat(v) || 0;
+        },
+        removeProperty: (n: string) => {
+          styleMap.delete(n);
+          if (n === "margin-left") marginLeftPx = 0;
+        },
+      },
+      animate: () => {
+        const finished = new Promise<void>(() => {});
+        return { finished, cancel() {}, finish() {} } as unknown as Animation;
+      },
+      getBoundingClientRect: () => ({ left: marginLeftPx, top: 0 }),
+      ownerDocument: {
+        defaultView: {
+          getComputedStyle: () => {
+            const raw = styleMap.get("transform")?.value ?? "";
+            const matrix = raw.replace(/translateX\(([-\d.e]+)px\)/, "matrix(1, 0, 0, 1, $1, 0)") || "none";
+            return { columnCount: "1", paddingLeft: "0", transform: matrix };
+          },
+        },
+      },
+    };
+    const contentDoc = {
+      documentElement: { scrollLeft: 0, scrollTop: 0, clientWidth: 100 },
+      body: { scrollLeft: 0, scrollTop: 0 },
+      defaultView: viewer.ownerDocument.defaultView,
+    };
+
+    const p = Object.create(ChapterPaginator.prototype) as Pager;
+    Object.assign(p, {
+      viewer, contentDoc,
+      loadSeq: 1, displayReadySeq: 1, displayReadyResult: true,
+      disposed: false, verticalMode: null,
+      flowProgression: "ltr", nativeSnapArmed: false,
+      settings: { readingMode: "paginated" },
+      metrics: { currentPage: 0, pageCount: 10 },
+      motionWindowForeground: true, slideMotionWanted: true,
+      pageMotionUnsupportedKey: "", motionCompanions: [],
+      snapOffsetsCache: { key: "10p", offsets: Array.from({ length: 10 }, (_, i) => i * 100) },
+      nativeSnapOffsets: () => p.snapOffsetsCache.offsets,
+      pageMotionCapable: () => true,
+      prefersTouchPaging: () => false,
+      closeFootnoteForNavigation: vi.fn(), clearSearchHighlightForDocument: vi.fn(),
+      cancelPendingAnchorSample: vi.fn(), scheduleAnchorSample: vi.fn(),
+      notifyUserCommit: vi.fn(), emit: vi.fn(),
+      readyState: (_e: boolean, page = p.metrics.currentPage) => ({ status: "ready", pageCount: 10, currentPage: page, empty: false }),
+    });
+
+    const globalObj = globalThis as Record<string, unknown>;
+    const savedMatrix = globalObj.DOMMatrixReadOnly;
+    globalObj.DOMMatrixReadOnly = class {
+      m41: number;
+      constructor(value: string) {
+        this.m41 = Number(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([-\d.e]+)/.exec(value)?.[1] ?? 0);
+      }
+    };
+    try {
+      // 1) 在第 0 页进入显示并预热窗口：预期基准应保持首页 0
+      p.writePagedScroll(0);
+      p.prepareMotion();
+      expect(p.pageMotion.driver).toBeInstanceOf(TransformPageMotion);
+      expect(p.pageMotion.driver.active).toBe(true);
+
+      // 2) 连按翻页把目标推过 4 屏窗口跨度：触发 animateTo -> !ensureWindow -> settleTo(500)
+      expect(p.motionTurn(1, 1, false)).toBe("moving");
+      expect(p.motionTurn(1, 2, false)).toBe("moving");
+      expect(p.motionTurn(1, 3, false)).toBe("moving");
+      expect(p.motionTurn(1, 4, false)).toBe("moving");
+      expect(p.motionTurn(1, 5, false)).toBe("moving");
+      expect(p.pageMotion.driver.active).toBe(false);
+      expect(viewer.scrollLeft).toBe(500);
+      expect(p.metrics.currentPage).toBe(5);
+
+      // 3) 几毫秒后浏览器触发异步 scroll 事件：不能把 scrollLeft 拉回首页 0
+      p.handleScroll();
+      expect(viewer.scrollLeft).toBe(500);
+
+      // 4) 在新停靠的第 5 页若发生选区漂移，仍然精确拉回第 5 页（500），兼顾 ER-0194
+      viewer.scrollLeft = 640;
+      p.handleSelectionChange();
+      expect(viewer.scrollLeft).toBe(500);
+    } finally {
+      if (savedMatrix === undefined) delete globalObj.DOMMatrixReadOnly;
+      else globalObj.DOMMatrixReadOnly = savedMatrix;
+    }
+  });
+
+  it("触屏拖过整屏松手（durationMs=0）留在窗口内提交，不退窗也不触发回滚", () => {
+    const styleMap = new Map<string, { value: string; priority: string }>([["width", { value: "390px", priority: "" }]]);
+    let scrollLeft = 0;
+    const viewer = {
+      clientWidth: 390,
+      clientLeft: 0,
+      get scrollWidth() { return 3900; },
+      get scrollLeft() { return scrollLeft; },
+      set scrollLeft(v: number) { scrollLeft = v; },
+      style: {
+        getPropertyValue: (n: string) => styleMap.get(n)?.value ?? "",
+        getPropertyPriority: (n: string) => styleMap.get(n)?.priority ?? "",
+        setProperty: (n: string, v: string, p = "") => { styleMap.set(n, { value: v, priority: p }); },
+        removeProperty: (n: string) => { styleMap.delete(n); },
+      },
+      animate: () => ({ finished: new Promise<void>(() => {}), cancel() {}, finish() {} }) as unknown as Animation,
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+      ownerDocument: { defaultView: { getComputedStyle: () => ({ columnCount: "1", paddingLeft: "0", transform: "none" }) } },
+    };
+    const p = Object.create(ChapterPaginator.prototype) as Pager;
+    Object.assign(p, {
+      viewer,
+      contentDoc: { documentElement: { scrollLeft: 0, scrollTop: 0, clientWidth: 390 }, body: { scrollLeft: 0, scrollTop: 0 }, defaultView: viewer.ownerDocument.defaultView },
+      loadSeq: 1, displayReadySeq: 1, displayReadyResult: true,
+      disposed: false, verticalMode: null,
+      flowProgression: "ltr", nativeSnapArmed: false,
+      settings: { readingMode: "paginated" },
+      metrics: { currentPage: 0, pageCount: 10 },
+      motionWindowForeground: true, slideMotionWanted: true,
+      pageMotionUnsupportedKey: "", motionCompanions: [],
+      snapOffsetsCache: { key: "touch", offsets: Array.from({ length: 10 }, (_, i) => i * 390) },
+      nativeSnapOffsets: () => p.snapOffsetsCache.offsets,
+      pageMotionCapable: () => true,
+      prefersTouchPaging: () => true,
+      closeFootnoteForNavigation: vi.fn(), clearSearchHighlightForDocument: vi.fn(),
+      cancelPendingAnchorSample: vi.fn(), scheduleAnchorSample: vi.fn(),
+      notifyUserCommit: vi.fn(), emit: vi.fn(),
+      readyState: (_e: boolean, page = p.metrics.currentPage) => ({ status: "ready", pageCount: 10, currentPage: page, empty: false }),
+    });
+
+    p.writePagedScroll(0);
+    p.prepareMotion(true);
+    const windowScroll = p.pageMotion.driver.windowScroll;
+
+    const ticket = p.motionBeginDrag(1);
+    expect(typeof ticket).toBe("number");
+    // 手指拖过整屏宽度（-410px）夹紧在 390px 落点，松手剩余距离 0 -> durationMs = 0
+    p.motionDrag(ticket, -410);
+    expect(p.motionRelease(ticket, 1, null)).toBe(true);
+    expect(p.pageMotion.driver.active).toBe(true);
+    expect(p.pageMotion.driver.windowScroll).toBe(windowScroll);
+    expect(p.metrics.currentPage).toBe(1);
+
+    p.handleScroll();
+    expect(viewer.scrollLeft).toBe(windowScroll);
+    expect(p.pageMotion.driver.read().position).toBe(390);
   });
 });
