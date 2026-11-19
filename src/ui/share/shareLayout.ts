@@ -66,14 +66,35 @@ export interface BrokenText {
   paragraphStarts: number[];
 }
 
+interface ProtectedTextRange { start: number; end: number }
+
+function protectUnits(units: string[], ranges: readonly ProtectedTextRange[], paragraphStart: number): string[] {
+  const grouped: string[] = [];
+  let offset = paragraphStart;
+  let joined = "";
+  let group = 0;
+  for (const unit of units) {
+    offset += unit.length;
+    joined += unit;
+    while (group < ranges.length && ranges[group].end <= offset) group++;
+    if (group < ranges.length && ranges[group].start < offset) continue;
+    grouped.push(joined);
+    joined = "";
+  }
+  if (joined) grouped.push(joined);
+  return grouped;
+}
+
 /** breakLines, also reporting where each later paragraph begins. */
-export function breakParagraphs(text: string, maxWidth: number, fontPx: number, measure: Measure): BrokenText {
+export function breakParagraphs(text: string, maxWidth: number, fontPx: number, measure: Measure, protectedRanges?: readonly ProtectedTextRange[]): BrokenText {
   const lines: string[] = [];
   const paragraphStarts: number[] = [];
+  let paragraphStart = 0;
   for (const paragraph of text.split("\n")) {
     if (lines.length) paragraphStarts.push(lines.length);
     let line = "";
-    for (const unit of breakUnits(paragraph)) {
+    const units = breakUnits(paragraph);
+    for (const unit of protectedRanges?.length ? protectUnits(units, protectedRanges, paragraphStart) : units) {
       const next = line + unit;
       if (!line || measure(next.trimEnd(), fontPx) <= maxWidth) {
         line = next;
@@ -94,6 +115,7 @@ export function breakParagraphs(text: string, maxWidth: number, fontPx: number, 
       }
     }
     lines.push(line.trimEnd());
+    paragraphStart += paragraph.length + 1;
   }
   return { lines, paragraphStarts };
 }
@@ -128,6 +150,7 @@ export interface FitRequest {
   ellipsis: string;
   /** Extra room between paragraphs, as a multiple of the font size. */
   paragraphGap?: number;
+  protectedRanges?: readonly ProtectedTextRange[];
 }
 
 export interface FitResult extends BrokenText {
@@ -151,12 +174,12 @@ export function fitText(req: FitRequest): FitResult {
   const fits = (broken: BrokenText, px: number) =>
     broken.lines.length * px * req.lineHeight + broken.paragraphStarts.length * px * gap <= req.blockSize + 0.5;
   for (let px = req.maxPx; px >= req.minPx; px -= step) {
-    const broken = breakParagraphs(req.text, req.lineLength, px, req.measure);
+    const broken = breakParagraphs(req.text, req.lineLength, px, req.measure, req.protectedRanges);
     if (fits(broken, px)) return { fontPx: px, ...broken, truncated: false };
   }
   const px = req.minPx;
   const chars = [...req.text];
-  const attempt = (n: number) => breakParagraphs(cutAt(chars, n) + req.ellipsis, req.lineLength, px, req.measure);
+  const attempt = (n: number) => breakParagraphs(cutAt(chars, n) + req.ellipsis, req.lineLength, px, req.measure, req.protectedRanges);
   let lo = 0, hi = chars.length;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;

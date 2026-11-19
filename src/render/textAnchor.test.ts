@@ -1,5 +1,6 @@
 import { parseHTML } from "linkedom";
 import { describe, expect, it } from "vitest";
+import { projectRubyQuote } from "./rubyQuote";
 import {
   MAX_ANCHOR_SNIPPET_CODE_POINTS,
   buildVisibleTextIndex,
@@ -42,6 +43,19 @@ describe("visible text anchor index", () => {
     const index = buildVisibleTextIndex(document, viewer);
     expect(index.totalChars).toBe(0);
     expect(index.mediaUnits).toBe(2);
+  });
+
+  it("projects Ruby for sharing while retaining the original annotation coordinates", () => {
+    const { document, viewer } = chapter('<p>甲<ruby>東京<rp>（</rp><rt>とうきょう</rt><rp>）</rp></ruby>😀<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>。</p>');
+    const index = buildVisibleTextIndex(document, viewer);
+    expect(index.originalTextForOffsets(0, index.totalChars)).toBe("甲東京（とうきょう）😀漢かん字じ。");
+    const projection = projectRubyQuote(index.sourceSlicesForOffsets(0, index.totalChars)!);
+    expect(projection).toEqual({
+      text: "甲東京😀漢字。", offsets: [0, 1, 2, 10, 11, 14, 16],
+      readings: [{ start: 1, end: 3, text: "とうきょう" }, { start: 4, end: 5, text: "かん" }, { start: 5, end: 6, text: "じ" }],
+    });
+    expect(projectRubyQuote(index.sourceSlicesForOffsets(1, 3)!)).toMatchObject({ readings: [{ text: "とうきょう" }] });
+    expect(projectRubyQuote(index.sourceSlicesForOffsets(2, 3)!)).toMatchObject({ text: "京", readings: [] });
   });
 
   it("validates original offsets, searches snippets linearly after drift, and chooses the nearest duplicate", () => {

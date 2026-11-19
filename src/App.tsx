@@ -93,6 +93,8 @@ import "./ui/readerDisplaySettings.css";
 import "./ui/themeTransition.css";
 import { ReaderContextMenu } from "./ui/ReaderContextMenu";
 import { ShareSheet } from "./ui/share/ShareSheet";
+import { addNoteRuby } from "./ui/share/shareNoteRuby";
+import { shareDraftForNote, shareDraftForSelection } from "./ui/share/shareDraftBuilder";
 import { shareCoverUrl } from "./ui/shelfView/cards";
 import { NoteComposer } from "./ui/NoteComposer";
 import type { ReaderNote } from "./ui/notes";
@@ -698,6 +700,7 @@ export default function App() {
   /** 指针是否悬停在交互式浮层（脚注弹窗等）上：此时不响应翻页键/后续可扩展书签等 */
   const overlayHoverRef = useRef(false);
   const foregroundRef = useRef<ReaderForeground>({ kind: "none" });
+  const noteShareRequestRef = useRef(0);
   foregroundRef.current = foreground;
 
   const {
@@ -2654,8 +2657,16 @@ export default function App() {
           onEditNote={(viewNote) => void handleEditNote(viewNote.id)}
           onDeleteNote={(viewNote) => requestNoteDelete(viewNote.id)}
           onShareNote={(viewNote) => {
+            const draft = shareDraftForNote(viewNote.id, currentNotes, hiddenNoteIds);
             const note = currentNotes.find((candidate) => candidate.id === viewNote.id);
-            if (note) openShare({ quote: note.selectedText, note: note.content, accent: note.color, spineIndex: note.spineIndex });
+            if (!draft || !book || !note) return;
+            const request = ++noteShareRequestRef.current;
+            const foregroundAtClick = foregroundRef.current;
+            void addNoteRuby(book, note, draft).then((ready) => {
+              if (request === noteShareRequestRef.current && bookRef.current === book && foregroundRef.current === foregroundAtClick) {
+                openShare(ready);
+              }
+            });
           }}
           pendingDeleteNotes={sidebarPendingDeletes}
           onUndoDeleteNote={undoNoteDelete}
@@ -3158,15 +3169,10 @@ export default function App() {
                       if (url) handleExternalLink(url);
                       readerRef.current?.clearTextSelection();
                     }}
-                    onShare={(selection, onHighlight) => {
-                      // On a highlight the card shows the whole highlight with its note and colour.
-                      const note = onHighlight ? currentNotes.find((candidate) => candidate.id === onHighlight.id) : undefined;
-                      openShare({
-                        quote: note?.selectedText ?? selection.text,
-                        note: note?.content ?? "",
-                        accent: note?.color,
-                        spineIndex: note?.spineIndex ?? selectedIndex,
-                      });
+                    onShare={(_, target) => {
+                      const draft = shareDraftForSelection(selectionContext, selectedIndex, currentNotes, hidden, target?.id);
+                      if (draft.quote.trim()) openShare(draft);
+                      else closeForeground();
                       readerRef.current?.clearTextSelection();
                     }}
                     onClose={endSelection}

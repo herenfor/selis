@@ -24,15 +24,17 @@ const LATIN_SENTENCE = /[^.!?\n]+(?:[.!?]+[”’"')\]]*(?=\s|$))?\s*|\n/g;
  */
 export function splitSentences(text: string): string[] {
   const latin = isLatinText(text);
-  const parts = text.match(latin ? LATIN_SENTENCE : CJK_SENTENCE) ?? [];
   const out: string[] = [];
-  for (const part of parts) {
-    if (!part.trim()) {
-      if (out.length) out[out.length - 1] += part;
-      continue;
-    }
-    out.push(part);
+  let end = 0;
+  for (const match of text.matchAll(latin ? LATIN_SENTENCE : CJK_SENTENCE)) {
+    const next = match.index + match[0].length;
+    if (!match[0].trim() && !out.length) continue;
+    const part = text.slice(end, next);
+    if (!match[0].trim()) out[out.length - 1] += part;
+    else out.push(part);
+    end = next;
   }
+  if (out.length) out[out.length - 1] += text.slice(end);
   return out.length ? out : [text];
 }
 

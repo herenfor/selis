@@ -1,3 +1,4 @@
+import type { RubyQuote } from "../render/rubyQuote";
 import type { FootnotePayload, SelectionContextPayload } from "../render/paginator";
 import type { ReaderNote } from "./notes";
 import type { NoteEditContext } from "./shelf";
@@ -13,10 +14,12 @@ export type NoteComposerDraft =
 /** What the share panel shows: a passage with its book place, note and highlight colour. */
 export interface ShareDraft {
   quote: string;
+  rubyQuote?: RubyQuote;
   note: string;
   /** Highlight colour name or #rrggbb; absent for plain text. */
   accent?: string;
   spineIndex: number;
+  source?: { start: number; end: number; notes: readonly ReaderNote[] };
 }
 
 export type ReaderForeground =

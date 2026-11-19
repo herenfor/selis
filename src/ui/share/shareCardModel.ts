@@ -1,3 +1,6 @@
+import type { ShareAnnotation } from "./shareDraftBuilder";
+import type { ShareInkRange, ShareRuby } from "./shareSourceModel";
+
 /**
  * Share card contract (ER-0118): what goes on a card, the four looks, the
  * sizes (three fixed, one that grows with the text) and their fixed palettes. A card is an image, so its colours
@@ -31,6 +34,10 @@ export interface ShareCardContent {
   quote: string;
   /** The reader's own note on the passage; empty for a plain highlight. */
   note?: string;
+  notes?: readonly ShareAnnotation[];
+  marks?: readonly ShareAnnotation[];
+  inks?: readonly ShareInkRange[];
+  rubies?: readonly ShareRuby[];
   bookTitle: string;
   author?: string;
   chapter?: string;
@@ -45,6 +52,7 @@ export interface ShareCardOptions {
   showCover: boolean;
   showChapter: boolean;
   showBrand: boolean;
+  showMarks: boolean;
 }
 
 export const DEFAULT_SHARE_OPTIONS: ShareCardOptions = {
@@ -54,6 +62,7 @@ export const DEFAULT_SHARE_OPTIONS: ShareCardOptions = {
   showCover: true,
   showChapter: true,
   showBrand: true,
+  showMarks: true,
 };
 
 export interface ShareCardPalette {

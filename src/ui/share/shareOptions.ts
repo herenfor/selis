@@ -20,6 +20,7 @@ export function parseShareOptions(raw: string | null): ShareCardOptions {
     showCover: flag("showCover"),
     showChapter: flag("showChapter"),
     showBrand: flag("showBrand"),
+    showMarks: flag("showMarks"),
   };
 }
 

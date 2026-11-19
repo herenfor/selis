@@ -1,18 +1,22 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "../controls/Segmented";
-import { CloseIcon } from "../readerIcons";
+import { CloseIcon, HistoryBackIcon, ShareIcon } from "../readerIcons";
 import { useScrollEdgeFade } from "../scrollEdgeFade";
 import { useUiText } from "../localization/UiLanguageProvider";
 import type { ShareDraft } from "../readerForeground";
 import { coverToneFromImage } from "./coverTone";
-import { canUseVertical, FALLBACK_COVER_TONE, shareCardPalette, type ShareCardContent, type ShareTemplate } from "./shareCardModel";
+import type { ShareCardContent, ShareCardOptions } from "./shareCardModel";
 import { drawShareCard, shareCardHeight, shareCardPng } from "./shareCardRenderer";
 import { useShareOptions } from "./shareOptions";
 import {
   canCopyImage, copyShareImage, copyShareText, saveShareImage, saveShareImageToGallery, shareActions, shareFileName,
   shareImageNative, type ShareActionId, type ShareSurface,
 } from "./shareOutput";
-import { formatShareCitation, splitSentences, tidyPassage } from "./shareText";
+import { formatShareCitation } from "./shareText";
+import { ShareControlsPanel, ShareFitWarning, type ShareSection } from "./ShareControlsPanel";
+import { ShareSourceFolio } from "./ShareSourceFolio";
+import { buildShareExcerpt, createShareSource, editShareRange, intersectShareRange, paintShareInk, type ShareInkRange, type ShareSentenceRange } from "./shareSourceModel";
+import type { ShareTextRange } from "./shareDraftBuilder";
 import "./shareSheet.css";
 
 export interface ShareSheetBook {
@@ -39,15 +43,30 @@ export interface ShareSheetProps {
 export function ShareSheet({ draft, book, surface, onClose, onNotice }: ShareSheetProps) {
   const { t } = useUiText();
   const { shareOptions: options, updateShareOptions } = useShareOptions();
-  const passage = useMemo(() => tidyPassage(draft.quote), [draft.quote]);
-  const sentences = useMemo(() => splitSentences(passage), [passage]);
-  const [kept, setKept] = useState(sentences.length);
-  // A long card grows with its text, so it always carries the whole passage (ER-0162).
+  const source = useMemo(() => createShareSource(draft), [draft]);
+  const [range, setRange] = useState(source.full);
+  const [inks, setInks] = useState<ShareInkRange[]>([]);
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
+  const [view, setView] = useState<"proof" | "source">("proof");
+  const [section, setSection] = useState<ShareSection>("style");
+  const [recent, setRecent] = useState<ShareTextRange | null>(null);
+  const [recall, setRecall] = useState(0);
   const long = options.ratio === "long";
-  const shown = long ? sentences.length : Math.max(1, kept);
-  const quote = sentences.slice(0, shown).join("").trim();
-  const hasNote = draft.note.trim().length > 0;
-  const verticalAllowed = canUseVertical(passage, options.ratio);
+  const excerpt = useMemo(() => buildShareExcerpt(source, long ? source.full : range, inks, excluded), [source, long, range, inks, excluded]);
+
+  const changeView = (next: "proof" | "source") => { setView(next); setRecall(0); };
+  const changeOptions = (patch: Partial<ShareCardOptions>) => {
+    if (patch.template || patch.ratio) changeView("proof");
+    updateShareOptions(patch);
+  };
+  const changeRange = (edge: keyof ShareSentenceRange, step: number) => {
+    if (!long) setRange((current) => editShareRange(current, source.full, edge, step));
+  };
+  const toggleNote = (id: string) => setExcluded((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
 
   const [cover, setCover] = useState<HTMLImageElement | null>(null);
   const [coverTone, setCoverTone] = useState<string | null>(null);
@@ -65,8 +84,9 @@ export function ShareSheet({ draft, book, surface, onClose, onNotice }: ShareShe
   }, [book.coverUrl]);
 
   const content: ShareCardContent = useMemo(() => ({
-    quote, note: draft.note, bookTitle: book.title, author: book.author, chapter: book.chapter, accent: draft.accent,
-  }), [quote, draft.note, draft.accent, book.title, book.author, book.chapter]);
+    quote: excerpt.quote, notes: excerpt.included, marks: excerpt.cardMarks, inks: excerpt.cardInks, rubies: excerpt.cardRubies,
+    bookTitle: book.title, author: book.author, chapter: book.chapter, accent: draft.accent,
+  }), [excerpt, draft.accent, book.title, book.author, book.chapter]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -131,125 +151,57 @@ export function ShareSheet({ draft, book, surface, onClose, onNotice }: ShareShe
     }
   };
 
-  const templates: { id: ShareTemplate; label: string }[] = [
-    { id: "paper", label: t("share.template.paper") },
-    { id: "cover", label: t("share.template.cover") },
-    { id: "night", label: t("share.template.night") },
-    { id: "vertical", label: t("share.template.vertical") },
-  ];
-  const activeTemplate = options.template === "vertical" && !verticalAllowed ? "paper" : options.template;
-  const toggles: { key: "showNote" | "showCover" | "showChapter" | "showBrand"; label: string; disabled?: boolean }[] = [
-    { key: "showNote", label: t("share.toggle.note"), disabled: !hasNote },
-    { key: "showCover", label: t("share.toggle.cover"), disabled: !book.coverUrl },
-    { key: "showChapter", label: t("share.toggle.chapter"), disabled: !book.chapter },
-    { key: "showBrand", label: t("share.toggle.brand") },
-  ];
-  const actionLabel: Record<ShareActionId, string> = {
-    copyText: t("share.action.copyText"),
-    copyImage: t("share.action.copyImage"),
-    saveImage: t("share.action.saveImage"),
-    saveGallery: t("share.action.saveGallery"),
-    share: t("share.action.share"),
+  const actionsText: Record<ShareActionId, string> = {
+    copyText: t("share.action.copyText"), copyImage: t("share.action.copyImage"), saveImage: t("share.action.saveImage"),
+    saveGallery: t("share.action.saveGallery"), share: t("share.action.share"),
   };
-
-  return (
-    <>
-      <div className="share-backdrop" aria-hidden="true" onClick={onClose} />
-      <div className="share-sheet" role="dialog" aria-modal="true" aria-labelledby="share-sheet-title">
-        <div className="share-head">
-          <span className="share-grabber" aria-hidden="true" />
-          <b id="share-sheet-title">{t("share.title")}</b>
-          <button type="button" className="ui-quiet-btn share-close" aria-label={t("share.close")} title={t("share.close")} onClick={onClose}>
-            <CloseIcon size={14} />
-          </button>
+  const identity = [book.title, book.author].filter(Boolean).join(" · ");
+  const availableRecent = recent && intersectShareRange(recent, excerpt.bounds);
+  return <>
+    <div className="share-backdrop" aria-hidden="true" onClick={onClose} />
+    <div className="share-sheet" role="dialog" aria-modal="true" aria-labelledby="share-sheet-title" onKeyDown={(event) => {
+      if (event.key !== "Tab") return;
+      const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), [tabindex='0']")].filter((el) => el.tabIndex >= 0 && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden");
+      const target = event.shiftKey ? focusable[focusable.length - 1] : focusable[0];
+      const boundary = event.shiftKey ? focusable[0] : focusable[focusable.length - 1];
+      if (event.target === boundary && target) { event.preventDefault(); target.focus(); }
+    }}>
+      <header className="share-head">
+        <span className="share-grabber" aria-hidden="true" />
+        <div className="share-title-group"><h1 id="share-sheet-title">{t("share.title")}</h1><span>{identity}</span></div>
+        <button type="button" autoFocus className="ui-quiet-btn share-close" aria-label={t("share.close")} title={t("share.close")} onClick={onClose}><CloseIcon /></button>
+      </header>
+      <div className="share-stage-wrap">
+        <div className="share-stage-bar">
+          <Segmented label={t("share.view")} value={view} variant="compact"
+            options={[{ value: "proof", label: t("share.proof") }, { value: "source", label: t("share.source") }]} onChange={changeView} />
+          {view === "source" && availableRecent && <button className="share-recent ui-quiet-btn" type="button" title={t("share.ink.recent")} aria-label={t("share.ink.recent")} onClick={() => setRecall((n) => n + 1)}><HistoryBackIcon size={14} /><span>{t("share.ink.recent")}</span></button>}
         </div>
-
-        <div ref={stageRef} className="share-stage scrollbar-hidden" data-long={long || undefined}>
+        <div hidden={view !== "proof"} ref={stageRef} className="share-stage scrollbar-hidden" data-long={long || undefined}>
           <canvas ref={canvasRef} className="share-canvas" role="img" aria-label={t("share.preview")} width={1080} height={1440} />
         </div>
-
-        <div className="share-side">
-          <div className="share-group">
-            <span className="share-label">{t("share.template")}</span>
-            <div className="share-thumbs" role="radiogroup" aria-label={t("share.template")}>
-              {templates.map(({ id, label }) => {
-                const disabled = id === "vertical" && !verticalAllowed;
-                const palette = shareCardPalette(id, draft.accent, coverTone ?? FALLBACK_COVER_TONE);
-                return (
-                  <button key={id} type="button" role="radio" aria-checked={activeTemplate === id} disabled={disabled}
-                    className="share-thumb" title={!disabled ? label : canUseVertical(passage) ? t("share.template.verticalNotLong") : t("share.template.verticalOnlyCjk")}
-                    onClick={() => updateShareOptions({ template: id })}>
-                    <i className={id === "vertical" ? "is-vertical" : undefined} style={{ background: palette.bg, color: palette.fg }}>
-                      {id === "vertical" ? "文字" : "文"}
-                    </i>
-                    <span>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="share-group is-ratio">
-            <span className="share-label">{t("share.ratio")}</span>
-            <Segmented label={t("share.ratio")} value={options.ratio} variant="compact"
-              options={[
-                { value: "3:4", label: t("share.ratio.portrait") },
-                { value: "1:1", label: t("share.ratio.square") },
-                { value: "9:16", label: t("share.ratio.story") },
-                { value: "long", label: t("share.ratio.long") },
-              ]}
-              onChange={(ratio) => updateShareOptions({ ratio })} />
-          </div>
-
-          <div className="share-group">
-            <span className="share-label">{t("share.content")}</span>
-            <div className="share-toggles">
-              {toggles.map(({ key, label, disabled }) => (
-                <button key={key} type="button" className="share-toggle" aria-pressed={!disabled && options[key]} disabled={disabled}
-                  onClick={() => updateShareOptions({ [key]: !options[key] })}>
-                  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-                    <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {sentences.length > 1 && !long && (
-            <div className="share-group">
-              <span className="share-label">{t("share.range")}</span>
-              <div className="share-range">
-                <button type="button" className="ui-quiet-btn" title={t("share.range.lessTip")} disabled={kept <= 1}
-                  onClick={() => setKept((n) => Math.max(1, n - 1))}>{t("share.range.less")}</button>
-                <button type="button" className="ui-quiet-btn" title={t("share.range.moreTip")} disabled={kept >= sentences.length}
-                  onClick={() => setKept((n) => Math.min(sentences.length, n + 1))}>{t("share.range.more")}</button>
-                <span>{t("share.range.count", { kept: shown, total: sentences.length, chars: [...quote].length })}</span>
-              </div>
-            </div>
-          )}
-          {(!long || truncated) && (
-            <p className={`share-fit${truncated ? " is-truncated" : ""}`}>
-              {long ? t("share.fit.longTruncated") : truncated ? t("share.fit.truncated") : t("share.fit.auto")}
-              {truncated && !long && (
-                <button type="button" className="share-fit-long" onClick={() => updateShareOptions({ ratio: "long" })}>
-                  {t("share.fit.useLong")}
-                </button>
-              )}
-            </p>
-          )}
-        </div>
-
-        <div className="share-actions" style={{ "--share-action-count": actions.length } as CSSProperties}>
-          {actions.map((action, index) => (
-            <button key={action} type="button" disabled={busy}
-              className={`share-action${index === actions.length - 1 ? " is-primary" : ""}`}
-              onClick={() => void run(action)}>
-              {actionLabel[action]}
-            </button>
-          ))}
-        </div>
+        {view === "source" && <ShareSourceFolio book={book} source={source} excerpt={excerpt} inks={inks} recent={recent} recall={recall}
+          long={long} showMarks={options.showMarks} showNote={options.showNote} onRange={changeRange} onToggleNote={toggleNote}
+          onInk={(selection, ink) => { setInks((current) => paintShareInk(current, selection, ink)); setRecent(selection); }} />}
+        {truncated && <div className="share-fit-mobile"><ShareFitWarning long={long} onLong={() => changeOptions({ ratio: "long" })} /></div>}
       </div>
-    </>
-  );
+      <ShareControlsPanel options={options} book={book} accent={draft.accent} coverTone={coverTone} source={source} excerpt={excerpt}
+        section={section} truncated={truncated} onSection={setSection} onOptions={changeOptions} onRange={changeRange}
+        onRestore={() => setRange(source.full)} onToggleNote={toggleNote} />
+      <footer className="share-actions">
+        {actions.map((action, index) => <button key={action} type="button" disabled={busy} aria-label={actionsText[action]} title={actionsText[action]}
+          className={`share-action${index === actions.length - 1 ? " is-primary" : ""}`} onClick={() => void run(action)}>
+          <ShareActionIcon action={action} /><span>{actionsText[action]}</span>
+        </button>)}
+      </footer>
+    </div>
+  </>;
+}
+
+function ShareActionIcon({ action }: { action: ShareActionId }) {
+  if (action === "share") return <ShareIcon size={16} />;
+  const path = action === "copyText" ? "M4 6h16M4 12h12M4 18h14"
+    : action === "copyImage" ? "M4 4h16v16H4zM4 16l5-5 3 3 2-2 6 6M15 8h.01"
+      : "M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4";
+  return <svg className="share-line-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d={path} /></svg>;
 }

@@ -9,8 +9,8 @@ describe("share panel model", () => {
   it("reads saved choices field by field and falls back on anything malformed", () => {
     expect(parseShareOptions(null)).toEqual(DEFAULT_SHARE_OPTIONS);
     expect(parseShareOptions("{bad")).toEqual(DEFAULT_SHARE_OPTIONS);
-    expect(parseShareOptions(JSON.stringify({ template: "night", ratio: "9:16", showBrand: false, showNote: "yes" })))
-      .toEqual({ ...DEFAULT_SHARE_OPTIONS, template: "night", ratio: "9:16", showBrand: false });
+    expect(parseShareOptions(JSON.stringify({ template: "night", ratio: "9:16", showBrand: false, showNote: "yes", showMarks: false })))
+      .toEqual({ ...DEFAULT_SHARE_OPTIONS, template: "night", ratio: "9:16", showBrand: false, showMarks: false });
     expect(parseShareOptions(JSON.stringify({ template: "neon", ratio: "2:1" }))).toEqual(DEFAULT_SHARE_OPTIONS);
   });
 

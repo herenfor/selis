@@ -8,6 +8,13 @@ import { contrast, coverToneFromPixels, readableTone } from "./coverTone";
 const measure: Measure = (text, px) => [...text].reduce((w, ch) => w + (/[\u0000-ɏ]/.test(ch) ? px / 2 : px), 0);
 
 describe("share card line breaking", () => {
+  it("keeps an annotated word on one line and preserves its offset across paragraphs", () => {
+    const ruby = { start: 4, end: 6 };
+    expect(breakParagraphs("先。\n甲東京へ", 20, 10, measure, [ruby])).toEqual({
+      lines: ["先。", "甲", "東京", "へ"], paragraphStarts: [1],
+    });
+  });
+
   it("never starts a line with closing punctuation or ends one with an opening quote", () => {
     expect(breakUnits("路。「走」")).toEqual(["路。", "「走」"]);
     // 5 characters per line at 10px over 50px.

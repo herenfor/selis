@@ -1,9 +1,3 @@
-/*
- * Share panel (ER-0119). Desktop: a centred dialog, preview left, choices
- * right, actions along the bottom. Phone (data-mobile-chrome): a bottom
- * sheet, preview on top, choices below, large actions at the foot. The card
- * itself is a canvas with fixed colours; only the chrome follows the theme.
- */
 .share-backdrop {
   position: fixed;
   inset: 0;
@@ -14,20 +8,20 @@
 .share-sheet {
   position: fixed;
   z-index: calc(var(--z-ui-modal) + 1);
-  top: 50%;
-  left: 50%;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) clamp(278px, 39vw, 348px);
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(880px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  width: min(920px, calc(100vw - 32px));
+  height: min(716px, calc(var(--visual-viewport-height, 100dvh) - 32px));
   overflow: hidden;
   border: var(--hairline) solid var(--panel-border);
   border-radius: var(--r-lg);
-  color: var(--fg);
   background: var(--panel-bg);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.08);
-  transform: translate(-50%, -50%);
+  color: var(--fg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.08);
+  font: var(--fs-body) / 1.35 var(--font-ui);
 }
 
 .share-head {
@@ -36,349 +30,141 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px 8px 18px;
+  min-height: 46px;
+  padding: 0 12px 0 20px;
   border-bottom: var(--hairline) solid var(--panel-border);
-  font-size: var(--fs-emph);
 }
+.share-title-group { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.share-title-group h1 { flex: none; margin: 0; font-size: var(--fs-emph); font-weight: 600; }
+.share-title-group > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); color: var(--muted); }
+.share-title-group > span::before { content: "·"; margin-inline-end: 8px; }
+.share-grabber { display: none; }
+.share-close { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
 
-.share-grabber {
-  display: none;
-}
-
-.share-close {
-  width: 32px;
-  padding: 0;
-}
-
-.share-stage {
-  display: grid;
-  place-items: center;
+.share-stage-wrap {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 24px;
+  overflow: hidden;
+  border-right: var(--hairline) solid var(--panel-border);
   background: color-mix(in srgb, var(--fg) 4%, var(--panel-bg));
 }
-
+.share-stage-bar { position: relative; flex: none; display: flex; justify-content: center; padding: 12px 12px 6px; }
+.share-recent { position: absolute; inset: 12px 12px auto auto; display: inline-flex; align-items: center; gap: 4px; padding-inline: 6px; font-size: var(--fs-caption); }
+.share-stage {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 8px 20px 20px;
+  container-type: size;
+}
+.share-stage[hidden] { display: none; }
 .share-canvas {
   display: block;
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: min(470px, calc(100vh - 200px));
-  border-radius: 4px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
+  max-height: 100cqh;
+  border-radius: var(--r-xs);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.10);
 }
-
-/* Long card (ER-0162): as wide as a 3:4 card, scrolled inside the stage. */
-.share-stage[data-long] {
-  max-height: calc(min(470px, 100vh - 200px) + 48px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.share-stage[data-long] .share-canvas {
-  width: 352px;
-  max-height: none;
-}
-
-.share-side {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-  padding: 18px;
-  overflow-y: auto;
-  border-left: var(--hairline) solid var(--panel-border);
-}
-
-.share-group {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.share-label {
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  letter-spacing: 0.04em;
-}
-
-.share-thumbs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.share-thumb {
-  display: grid;
-  justify-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-caption);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.share-thumb > i {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 3 / 4;
-  border-radius: 6px;
-  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
-  font-size: var(--fs-emph);
-  font-style: normal;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
-  transition: box-shadow var(--ui-control-quick) var(--ui-ease);
-}
-
-.share-thumb > i.is-vertical {
-  writing-mode: vertical-rl;
-}
-
-.share-thumb[aria-checked="true"] {
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.share-thumb[aria-checked="true"] > i {
-  box-shadow: 0 0 0 2px var(--panel-bg), 0 0 0 4px var(--accent);
-}
-
-.share-thumb:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
-
-.share-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.share-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 10px;
-  border: var(--hairline) solid var(--panel-border);
-  border-radius: var(--r-sm);
-  background: var(--panel-card, var(--bg));
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-caption);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--ui-control-quick) var(--ui-ease), border-color var(--ui-control-quick) var(--ui-ease);
-}
-
-.share-toggle > svg {
-  opacity: 0.3;
-}
-
-.share-toggle[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-border));
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel-card, var(--bg)));
-}
-
-.share-toggle[aria-pressed="true"] > svg {
-  color: var(--accent);
-  opacity: 1;
-}
-
-.share-toggle:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-.share-range {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-.share-fit {
-  margin: -8px 0 0;
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  line-height: 1.5;
-}
-
-.share-fit.is-truncated {
-  color: color-mix(in srgb, var(--ui-warning) 70%, var(--fg));
-}
-
-/* The one-tap way out of a cut passage: a tinted fill, so it reads as a button on touch too. */
-.share-fit-long {
-  min-height: 26px;
-  margin-left: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.share-fit-long:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.share-fit-long:active {
-  background: color-mix(in srgb, var(--accent) 24%, transparent);
-}
+.share-stage[data-long] { align-items: start; overflow-y: auto; overscroll-behavior: contain; }
+.share-stage[data-long] .share-canvas { width: min(352px, 100%); max-height: none; }
+.share-fit-mobile { display: none; }
 
 .share-actions {
   grid-column: 1 / -1;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  padding: 12px 18px;
+  min-width: 0;
+  padding: 10px 16px;
   border-top: var(--hairline) solid var(--panel-border);
 }
-
 .share-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 36px;
-  padding: 0 16px;
+  min-width: 0;
+  padding: 0 12px;
   border: 0;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   color: var(--fg);
   font: inherit;
-  font-size: var(--fs-body);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--ui-control-quick) var(--ui-ease), scale 180ms var(--ui-ease);
+  white-space: nowrap;
+}
+.share-action span { overflow: hidden; text-overflow: ellipsis; }
+.share-action svg { flex: none; }
+.share-action:hover:not(:disabled) { background: var(--ui-control-hover); }
+.share-action.is-primary { margin-inline-start: auto; background: var(--accent); color: var(--ui-on-solid-accent); font-weight: 600; }
+.share-action.is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
+.share-line-icon { fill: none; stroke: currentColor; stroke-width: var(--icon-stroke); stroke-linecap: round; stroke-linejoin: round; }
+.share-line-icon path { vector-effect: non-scaling-stroke; }
+.share-sheet button:disabled { opacity: 0.53; }
+.share-sheet :is(button, [tabindex="0"]):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+@media (max-width: 620px) and (orientation: portrait) {
+  .share-sheet {
+    inset: auto 0 0;
+    transform: none;
+    width: 100%;
+    height: calc(var(--visual-viewport-height, 100dvh) - max(12px, env(safe-area-inset-top, 0px)));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-inline: 0;
+    border-bottom: 0;
+  }
+  .share-head { position: relative; padding: 9px 12px 2px 16px; }
+  .share-grabber { position: absolute; inset: 4px auto auto calc(50% - 18px); display: block; width: 36px; height: 4px; border-radius: var(--r-full); background: color-mix(in srgb, var(--fg) 20%, transparent); }
+  .share-stage-wrap { border-right: 0; }
+  .share-stage-bar { padding-block: 8px 4px; }
+  .share-recent { top: 8px; }
+  .share-stage { padding: 6px 16px 10px; }
+  .share-stage[data-long] .share-canvas { width: min(296px, 100%); }
+  .share-fit-mobile { display: block; padding: 0 12px 6px; }
+  .share-sheet .share-actions {
+    flex-wrap: nowrap;
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .share-action { flex: 1 1 0; min-height: 42px; padding: 0 6px; }
+  .share-action.is-primary { flex: 1.15 1 0; margin: 0; }
 }
 
-.share-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--fg) 12%, transparent);
+@media (max-height: 560px) and (orientation: landscape) {
+  .share-sheet {
+    inset: 0;
+    transform: none;
+    width: 100%;
+    height: var(--visual-viewport-height, 100dvh);
+    grid-template-columns: minmax(0, 1fr) min(368px, 46%);
+    border: 0;
+    border-radius: 0;
+    padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  }
+  .share-head { min-height: 36px; padding-inline: 14px 10px; }
+  .share-stage-bar { padding: 6px 10px 3px; }
+  .share-recent { top: 6px; }
+  .share-stage { padding: 4px 12px 9px; }
+  .share-stage[data-long] .share-canvas { width: min(260px, 100%); }
+  .share-actions { padding: 5px 12px calc(5px + env(safe-area-inset-bottom, 0px)); }
+  .share-action { min-height: 32px; }
 }
 
-.share-action:active:not(:disabled) {
-  scale: 0.97;
-  transition-duration: 0s;
+@media (max-width: 1060px) {
+  .share-recent span { display: none; }
 }
 
-.share-action.is-primary {
-  background: var(--accent);
-  color: var(--ui-on-solid-accent, #fff);
-  font-weight: 600;
-}
-
-.share-action.is-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, #000);
-}
-
-.share-action:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-/* ---- Phone: bottom sheet ---- */
-.app[data-mobile-chrome="true"] .share-sheet {
-  top: auto;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  width: auto;
-  max-height: calc(var(--visual-viewport-height, 100vh) - env(safe-area-inset-top, 0px) - 12px);
-  border-radius: var(--r-lg) var(--r-lg) 0 0;
-  transform: none;
-}
-
-.app[data-mobile-chrome="true"] .share-head {
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 16px 4px;
-  border-bottom: 0;
-}
-
-.app[data-mobile-chrome="true"] .share-grabber {
-  display: block;
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--fg) 18%, transparent);
-}
-
-.app[data-mobile-chrome="true"] .share-close {
-  display: none;
-}
-
-.app[data-mobile-chrome="true"] .share-stage {
-  padding: 10px 22px 14px;
-  background: transparent;
-}
-
-.app[data-mobile-chrome="true"] .share-canvas {
-  max-height: min(400px, 46vh);
-}
-
-.app[data-mobile-chrome="true"] .share-stage[data-long] {
-  max-height: calc(min(400px, 46vh) + 24px);
-}
-
-.app[data-mobile-chrome="true"] .share-stage[data-long] .share-canvas {
-  width: 300px;
-  max-height: none;
-}
-
-/* Phone: the preview takes most of the screen, so the hint and the size sit first. */
-.app[data-mobile-chrome="true"] .share-fit {
-  order: -2;
-  margin-top: 0;
-}
-
-.app[data-mobile-chrome="true"] .share-group.is-ratio {
-  order: -1;
-}
-
-.app[data-mobile-chrome="true"] .share-fit-long {
-  min-height: 30px;
-}
-
-.app[data-mobile-chrome="true"] .share-side {
-  gap: 14px;
-  padding: 4px 16px 8px;
-  border-left: 0;
-}
-
-.app[data-mobile-chrome="true"] .share-thumb > i {
-  aspect-ratio: 5 / 4;
-}
-
-.app[data-mobile-chrome="true"] .share-toggle {
-  min-height: 36px;
-}
-
-.app[data-mobile-chrome="true"] .share-actions {
-  display: grid;
-  grid-template-columns: repeat(var(--share-action-count, 3), minmax(0, 1fr));
-  gap: 10px;
-  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  border-top: 0;
-}
-
-/* Phone: thumb-sized but not slabs; the label grows instead of the box. */
-.app[data-mobile-chrome="true"] .share-action {
-  min-height: 46px;
-  padding: 0 10px;
-  border-radius: var(--r-md);
-  font-size: var(--fs-emph);
+@media (max-width: 360px) {
+  .share-action { gap: 4px; font-size: var(--fs-caption); }
+  .share-action svg { width: 13px; }
 }

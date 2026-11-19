@@ -6,22 +6,24 @@ import { DEFAULT_SHARE_OPTIONS, SHARE_LONG_MAX_HEIGHT, SHARE_LONG_MIN_HEIGHT, ty
 /** Records what was drawn; text measures 1em per wide character, half for others. */
 function recorder() {
   const texts: string[] = [];
+  const ink: string[] = [];
+  const fills: string[] = [];
   const paths: string[] = [];
   let images = 0;
   let font = "10px serif";
   const px = () => Number(/([\d.]+)px/.exec(font)?.[1] ?? 10);
   const ctx = {
-    save() {}, restore() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {}, clip() {},
+    save() {}, restore() {}, fillRect() { fills.push(this.fillStyle); }, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {}, clip() {},
     translate() {}, scale() {},
     fill(path?: unknown) { if (path && typeof path === "object") paths.push((path as { d: string }).d); },
-    fillText(text: string) { texts.push(text); },
+    fillText(text: string) { texts.push(text); ink.push(this.fillStyle); },
     measureText(text: string) { return { width: [...text].reduce((w, ch) => w + (/[\u0000-ɏ]/.test(ch) ? px() / 2 : px()), 0) } as TextMetrics; },
     drawImage() { images++; },
     get font() { return font; }, set font(v: string) { font = v; },
     fillStyle: "", textAlign: "left", textBaseline: "middle", shadowColor: "", shadowBlur: 0, shadowOffsetY: 0,
   };
   const makePath = (d: string) => ({ d }) as unknown as Path2D;
-  return { ctx: ctx as unknown as ShareCardContext, makePath, texts, paths, images: () => images };
+  return { ctx: ctx as unknown as ShareCardContext, makePath, texts, ink, fills, paths, images: () => images };
 }
 
 const content: ShareCardContent = {
@@ -30,6 +32,23 @@ const content: ShareCardContent = {
 const cover = { naturalWidth: 200, naturalHeight: 300 } as unknown as HTMLImageElement;
 
 describe("share card renderer", () => {
+  it("draws book marks and independently colored phrases in horizontal and vertical cards", () => {
+    const fill = { id: "a", start: 2, end: 5, note: "第一条", style: "highlight", color: "yellow" } as const;
+    const line = { id: "b", start: 5, end: 9, note: "第二条", style: "squiggly", color: "green" } as const;
+    const annotated: ShareCardContent = { ...content, marks: [fill, line], notes: [fill, line], inks: [{ start: 4, end: 5, ink: "red" }] };
+    for (const template of ["paper", "vertical"] as const) {
+      const visible = recorder();
+      drawShareCard(visible.ctx, annotated, { ...DEFAULT_SHARE_OPTIONS, template }, {}, visible.makePath);
+      expect(visible.fills).toContain("rgba(250, 204, 21, 0.40)");
+      expect(visible.fills.filter((color) => color === "#2f9e5b").length).toBeGreaterThan(1);
+      expect(visible.ink[visible.texts.indexOf(annotated.quote[4])]).toBe("#994d3e");
+      expect(visible.texts.join("")).toContain("第一条第二条");
+      const hidden = recorder();
+      drawShareCard(hidden.ctx, annotated, { ...DEFAULT_SHARE_OPTIONS, template, showMarks: false }, {}, hidden.makePath);
+      expect(hidden.fills).not.toContain("rgba(250, 204, 21, 0.40)");
+      expect(hidden.ink).toContain("#994d3e");
+    }
+  });
   it("draws passage, note, book line, cover and brand by default", () => {
     const r = recorder();
     const result = drawShareCard(r.ctx, content, DEFAULT_SHARE_OPTIONS, { cover }, r.makePath);
@@ -41,6 +60,18 @@ describe("share card renderer", () => {
     expect(r.texts).toContain("鲁迅 · 故乡");
     expect(r.images()).toBe(1);
     expect(r.paths).toContain(WORDMARK_PATH);
+  });
+
+  it("draws Ruby above a complete horizontal base and alongside a vertical one", () => {
+    const sample = { ...content, quote: "東京へ行く。", rubies: [{ start: 0, end: 2, text: "とうきょう" }] };
+    const horizontal = recorder();
+    drawShareCard(horizontal.ctx, sample, DEFAULT_SHARE_OPTIONS, {}, horizontal.makePath);
+    expect(horizontal.texts).toContain("とうきょう");
+    expect(horizontal.texts.join("")).toContain("東京へ行く。");
+    expect(horizontal.texts).not.toContain("東京とうきょう");
+    const vertical = recorder();
+    drawShareCard(vertical.ctx, sample, { ...DEFAULT_SHARE_OPTIONS, template: "vertical" }, {}, vertical.makePath);
+    expect(vertical.texts.join("")).toContain("とうきょう東京へ行く︒");
   });
 
   it("honours every switch", () => {

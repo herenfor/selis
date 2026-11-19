@@ -3,6 +3,7 @@
  * module only observes the chapter DOM and maps normalized text positions to
  * text nodes; it never writes DOM/style values or changes layout.
  */
+import { projectRubyQuote, type RubyQuote, type SourceTextSlice } from "./rubyQuote";
 import type { NodeProjection } from "./textProjection/nodeProjection";
 
 
@@ -30,6 +31,7 @@ export interface TextSelectionPayload extends TextRangeAnchorData {
    * hosts that cannot produce it.
    */
   originalSelectedText?: string;
+  rubyQuote?: RubyQuote;
   rect: { left: number; top: number; right: number; bottom: number };
 }
 
@@ -384,6 +386,10 @@ export class VisibleTextIndex {
    * slices their original strings, preserving internal spaces/newlines.
    */
   originalTextForOffsets(start: number, end: number): string | null {
+    return this.sourceSlicesForOffsets(start, end)?.map(({ text }) => text).join("") || null;
+  }
+
+  sourceSlicesForOffsets(start: number, end: number): SourceTextSlice[] | null {
     if (
       !validOffset(start) ||
       !validOffset(end) ||
@@ -404,9 +410,8 @@ export class VisibleTextIndex {
     // These offsets belong to different Text nodes when the selection crosses markup.
     if (startRaw === undefined || endRaw === undefined) return null;
 
-    const pieces: string[] = [];
+    const pieces: SourceTextSlice[] = [];
     let previousBlock: Element | null = null;
-    let hasPiece = false;
     for (let index = startNodeIndex; index <= endNodeIndex; index++) {
       const node = this.sourceTextNodes[index];
       if (!node) continue;
@@ -421,12 +426,14 @@ export class VisibleTextIndex {
       const text = source.slice(from, to);
       if (!text) continue;
       const block = nearestCopyBlock(node);
-      if (hasPiece && block !== previousBlock) pieces.push("\n");
-      pieces.push(text);
+      if (pieces.length && block !== previousBlock) pieces.push({ text: "\n" });
+      pieces.push({
+        text, node, offset: item && this.offsetForOriginalRaw(item, from),
+        complete: !!item && from <= item.rawStarts[0] && to >= item.rawEnds[item.rawEnds.length - 1],
+      });
       previousBlock = block;
-      hasPiece = true;
     }
-    return hasPiece ? pieces.join("") : null;
+    return pieces.length ? pieces : null;
   }
 
   snippetAt(offset: number): string | null {
@@ -569,9 +576,12 @@ export function captureTextSelection(
   ) return null;
   const rect = rangeRect(range);
   if (!rect) return null;
+  const slices = index.sourceSlicesForOffsets(start, end);
+  const rubyQuote = slices ? projectRubyQuote(slices) : undefined;
   return {
     selectedText,
-    originalSelectedText: index.originalTextForOffsets(start, end) ?? undefined,
+    originalSelectedText: slices?.map(({ text }) => text).join(""),
+    ...(rubyQuote && { rubyQuote }),
     startTextOffset: start,
     endTextOffset: end,
     startTextSnippet: index.snippetAt(start),
