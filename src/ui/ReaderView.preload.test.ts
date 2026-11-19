@@ -549,6 +549,28 @@ describe("ReaderView preload settings lifecycle", () => {
     expect(instances[1].path).toBe("1.xhtml");
   });
 
+  it("seamless turns keep the near-edge deadline and promote the in-flight neighbour without a second load", async () => {
+    const handle = createRef<ReaderHandle>();
+    props = { ...props, settings: { ...props.settings, seamlessChapterTurn: true, columnsPerView: 1 } };
+    const show = () => dom.render(createElement(ReaderView, { ...props, ref: handle }));
+    await show();
+    const active = instances[0];
+    await act(async () => { active.finish(); });
+    expect(instances).toHaveLength(1);
+    // A page turn inside the short chapter must not postpone its original 16 ms deadline.
+    await act(async () => { vi.advanceTimersByTime(10); handle.current!.nextPage(); });
+    await act(async () => { vi.advanceTimersByTime(6); });
+    const next = instances[1];
+    expect(next.path).toBe("1.xhtml");
+    props = { ...props, spineIndex: 1, startAtEnd: { nonce: 1, atEnd: false } };
+    await show();
+    await act(async () => { next.finish(); });
+    expect(active.load).toHaveBeenCalledTimes(1);
+    expect(next.load).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(16); });
+    expect(instances.some(p => p.path === "2.xhtml")).toBe(true);
+  });
+
   it("在预加载空闲等待期内再次切章，会自动取消旧预加载任务", async () => {
     await render();
     const active = instances[0];

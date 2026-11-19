@@ -110,6 +110,23 @@ describe("paginator retained motion window", () => {
     expect(frameRect).not.toHaveBeenCalled();
   });
 
+  it("shortens the last moving page only for a reserved seamless chapter handoff", () => {
+    const { p } = pagerFixture();
+    const expediteLanding = vi.fn();
+    p.ensurePageMotion = () => p.pageMotion;
+    p.pageMotion.driver.expediteLanding = expediteLanding;
+    p.pageMotion.session.turn = () => ({ kind: "boundary", settled: false });
+    p.settings.preloadNextChapter = true;
+    expect(p.motionTurn(1, 1, true)).toBe("reserved");
+    expect(expediteLanding).not.toHaveBeenCalled();
+    p.settings.seamlessChapterTurn = true;
+    expect(p.motionTurn(1, 2, false)).toBe("book-edge");
+    expect(expediteLanding).not.toHaveBeenCalled();
+    expect(p.motionTurn(1, 3, true)).toBe("reserved");
+    expect(expediteLanding).toHaveBeenCalledOnce();
+    expect(p.pageMotionPendingChapter).toBe(1);
+  });
+
   it("a synchronous driver fault hands the same turn back to the fallback without a stale live page", () => {
     const p = Object.create(ChapterPaginator.prototype) as Pager;
     p.pageMotionStarted = vi.fn();

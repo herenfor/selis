@@ -67,6 +67,7 @@ import type { ScrubToken } from "./readerProgressAxis";
 import { installPagedSwipe, PAGED_SWIPE_THRESHOLD_PX } from "../render/pagedSwipe";
 import { ChapterSeam, type ExternalSeam } from "./chapterSeam";
 import { ChapterFillIndex, chapterFillEntries } from "../render/chapterFill";
+import { ChapterPreloadSchedule } from "./chapterPreloadSchedule";
 import { planFrontRun } from "./frontRunPlan";
 import { canJoinChapters, chapterFillLayoutKey, joinLaneClip, type JoinLeaves } from "./chapterJoin";
 import { PAGED_LAYER, planPresentationLayers, planSeamTrack, standbyReaderProps, type PagedLayerKey, type PresentationLayer, type PresentationPlan } from "./presentationStack";
@@ -828,8 +829,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   const sameDirThrottleUntilRef = useRef(0);
   const chapterTransitionLockedRef = useRef(false);
   const chapterTransitionCooldownUntilRef = useRef(0);
-  const preloadDebounceTimerRef = useRef<number | null>(null);
-  /** 当前正在完整排版的活缓存槽；输入到达时优先取消未发布的后台工作。 */
+  const [preloadSchedule] = useState(() => new ChapterPreloadSchedule());
+  /** The one in-flight neighbour survives ordinary page turns and is released when the document is hidden. */
   const preloadInFlightSlotRef = useRef<PaginatorSlot | null>(null);
   /** 当前 book/布局代次下近邻完整排版失败的章，避免失败后立即重试同一章。 */
   const failedPreloadsRef = useRef(new Set<string>());
@@ -843,12 +844,9 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   const warmupTicketRef = useRef<WarmupTicket | null>(null);
   const warmupSlotRef = useRef<PaginatorSlot | null>(null);
 
-  const clearPreloadTimer = (): void => {
-    if (preloadDebounceTimerRef.current !== null) {
-      window.clearTimeout(preloadDebounceTimerRef.current);
-      preloadDebounceTimerRef.current = null;
-    }
-  };
+  const clearPreloadTimer = (): void => preloadSchedule.cancel();
+  const approachingChapterEdge = (): boolean => latestRenderSettingsRef.current.seamlessChapterTurn === true &&
+    preloadSchedule.nearBoundary(activeSlotRef.current?.state);
 
   /**
    * 换章滚轮手势保护：
@@ -1027,9 +1025,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     outerWheelRef.current.reset();
     outerScrollWheelRef.current.reset();
     paginator.resetWheelAccumulator?.();
-    // 切章与定位就绪后，绝不立刻同步抢占主线程执行相邻章节重排，
-    // 而是延后到用户稳定阅读的空闲期（500ms 后）再悄悄准备。
-    scheduleAdjacentPreloadsDebounced(500);
+    // 让出当前显示任务；离章边近时，下一章的准备不必等输入停止。
+    queueAdjacentPreloads(500);
   };
 
   const buildPaginator = (slot: PaginatorSlot): ChapterPaginator => {
@@ -1065,6 +1062,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
         onPageStateRef.current(state);
         // transient 是运动途中的页码预览，不是落定：丝带继续隐藏。
         if (state.status === "ready" && !state.transient) {
+          if (slot.ready && preloadAllowedRef.current && approachingChapterEdge()) queueAdjacentPreloads();
           syncJoin();
           refreshRibbonsRef.current();
         } else {
@@ -1262,21 +1260,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   };
 
   const liveWindowIndices = (activeIndex: number): number[] => {
-    const result: number[] = [activeIndex];
-    // 资源预算已超且当前活缓存仍无法回收时，先把后台预读窗口收缩到当前章；
-    // 当前可见章/单个超大资源可以暂时超预算，不能为了预算把正在显示的内容删掉。
-    if (server.mediaCacheBudgetExceeded) return result;
-    const add = (index: number): void => {
-      if (index >= 0 && !result.includes(index)) result.push(index);
-    };
-    // 邻章优先级固定为 next、prev、next2、prev2；活缓存上限五章。
-    const next1 = nextLinearIndex(book, activeIndex, 1);
-    const prev1 = nextLinearIndex(book, activeIndex, -1);
-    add(next1);
-    add(prev1);
-    if (next1 >= 0) add(nextLinearIndex(book, next1, 1));
-    if (prev1 >= 0) add(nextLinearIndex(book, prev1, -1));
-    return result;
+    if (server.mediaCacheBudgetExceeded) return [activeIndex];
+    return preloadSchedule.indices(book, activeIndex, approachingChapterEdge());
   };
 
   const scheduleAdjacentPreloads = (): void => {
@@ -1304,6 +1289,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     if (
       !active?.paginator ||
       active.spineIndex === null ||
+      active.spineIndex !== spineIndexRef.current ||
       !active.ready ||
       active.state.status !== "ready" ||
       !sameRenderingSettings(active.renderSettings, latestRenderSettingsRef.current)
@@ -1328,11 +1314,16 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       if (path) wantedPaths.set(index, path);
     }
 
-    // 只保留当前章 ±2；远处旧槽立即淘汰，不把全文摘要当可显示缓存。
+    // 回收已离开窗口的章节；全文摘要不能代替可显示的槽。
     // 显式跳到已缓存的相邻章会走普通加载，留下与当前章或彼此重复的槽：它们占着
     // 缓存位，真正缺的邻章就排不进来，也一并淘汰。
     const kept = new Set<number>([active.spineIndex]);
     for (const slot of [...spareSlotsRef.current]) {
+      // A moving track owns its visible frames through landing, even if input has reversed.
+      if (seamRef.current?.track.includes(slot) || trackRevealRef.current.includes(slot)) {
+        if (slot.spineIndex !== null) kept.add(slot.spineIndex);
+        continue;
+      }
       const duplicate = slot.spineIndex !== null && kept.has(slot.spineIndex);
       if (slot.spineIndex !== null && !duplicate) kept.add(slot.spineIndex);
       if (
@@ -1347,6 +1338,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       }
     }
 
+    // Direction or frame changes can wake us while a different neighbour is still measuring.
+    if (preloadInFlightSlotRef.current) return;
     const usedFrames = new Set<LiveReaderFrame>([
       active.frame as LiveReaderFrame,
       ...spareSlotsRef.current.map((slot) => slot.frame as LiveReaderFrame),
@@ -1418,14 +1411,14 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
             const fill = fillIndex();
             if (fill) recordFill(fill, slot);
           }
-          scheduleAdjacentPreloadsDebounced(150);
+          queueAdjacentPreloads(150);
         })
         .catch(() => {
           if (preloadInFlightSlotRef.current === slot) preloadInFlightSlotRef.current = null;
           if (!spareSlotsRef.current.includes(slot)) return;
           failedPreloadsRef.current.add(`${index}:${path}`);
           disposeSpareSlot(slot);
-          scheduleAdjacentPreloadsDebounced(150);
+          queueAdjacentPreloads(150);
         });
       return;
     }
@@ -1435,17 +1428,14 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     scheduleFullBookWarmupDebounced(500);
   };
 
-  function scheduleAdjacentPreloadsDebounced(delayMs = 500): void {
-    clearPreloadTimer();
-    if (backgroundHeld()) return;
+  function queueAdjacentPreloads(delayMs = 500): void {
+    if (backgroundHeld()) { clearPreloadTimer(); return; }
     if (!preloadAllowedRef.current || latestRenderSettingsRef.current.readingMode === "scroll") {
       disposeSpareSlots();
       return;
     }
-    preloadDebounceTimerRef.current = window.setTimeout(() => {
-      preloadDebounceTimerRef.current = null;
-      scheduleAdjacentPreloads();
-    }, delayMs);
+    preloadSchedule.request(scheduleAdjacentPreloads, delayMs,
+      latestRenderSettingsRef.current.seamlessChapterTurn === true, approachingChapterEdge());
   }
 
   const clearWarmupTimer = (): void => {
@@ -1688,7 +1678,6 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
 
   /** 输入/显式导航优先：先停掉尚未发布的临时测量，再让前台继续。普通输入不销毁在途预载目标。 */
   const pauseBackgroundWarmupForInput = (): void => {
-    clearPreloadTimer();
     warmupGenerationRef.current += 1;
     clearWarmupTimer();
     cancelWarmupIdle();
@@ -1697,7 +1686,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     warmupRunningRef.current = false;
     disposeWarmupSlot();
     if (preloadAllowedRef.current && latestRenderSettingsRef.current.readingMode !== "scroll") {
-      scheduleAdjacentPreloadsDebounced(500);
+      queueAdjacentPreloads(500);
     }
   };
 
@@ -1721,7 +1710,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       if (!backgroundPausedRef.current) return;
       backgroundPausedRef.current = false;
       activeSlotRef.current?.paginator?.setMotionWindowForeground?.(!presentationStandbyRef.current);
-      if (preloadAllowedRef.current) scheduleAdjacentPreloadsDebounced(250);
+      if (preloadAllowedRef.current) queueAdjacentPreloads(250);
     };
     document.addEventListener("visibilitychange", syncBackgroundPreparation);
     syncBackgroundPreparation();
@@ -1781,7 +1770,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   /**
    * A16-3：联动轨道。从相邻章起，只要上一屏是整章唯一的一屏、两章之间是普通章边（后一章没有
    * 读者空栏，不会是拼接屏），就把再下一章也排上；当前章本身只有一屏时，另一侧的邻章也排上，
-   * 反向可以直接接住。只用 ±2 活缓存里已排好的章，不为此加载任何东西。
+   * 反向可以直接接住。只用活缓存里已排好的章，不为此加载任何东西。
    */
   const extendSeamChain = (current: PaginatorSlot, from: PaginatorSlot, dir: 1 | -1, limit: number): PaginatorSlot[] => {
     const out: PaginatorSlot[] = [];
@@ -1799,7 +1788,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
 
   const seamTrackSlots = (current: PaginatorSlot, first: PaginatorSlot, direction: 1 | -1): { slots: PaginatorSlot[]; origin: number } => {
     const extend = (from: PaginatorSlot, dir: 1 | -1, limit: number) => extendSeamChain(current, from, dir, limit);
-    const ahead = [first, ...extend(first, direction, 1)];
+    const ahead = [first, ...extend(first, direction, LIVE_READER_FRAMES.length - 2)];
     const behind = extend(current, (-direction) as 1 | -1, 1).filter((slot) => !ahead.includes(slot));
     const before = direction === 1 ? [...behind].reverse() : [...ahead].reverse();
     const after = direction === 1 ? ahead : behind;
@@ -2218,7 +2207,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
           disposeWarmupSlot();
           warmupRunningRef.current = false;
           // 新的精确叶数可能让缓存章需要按新空栏重排，或让章边可以拼接。
-          scheduleAdjacentPreloadsDebounced(150);
+          queueAdjacentPreloads(150);
         }
       }
     })();
@@ -2594,6 +2583,9 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     const isCurrentNavigation = (): boolean => !abandoned && navigation === chapterNavigationRef.current;
     void (async () => {
       const { startAtEnd, explicitNavigation } = nonces;
+      const origin = activeSlotRef.current?.spineIndex;
+      if (origin == null || explicitNavigation) preloadSchedule.direction = startAtEnd ? -1 : 1;
+      else if (origin !== spineIndex) preloadSchedule.direction = spineIndex > origin ? 1 : -1;
       if (explicitNavigation) {
         lockedReverseDirRef.current = 0;
         reverseLockUntilRef.current = 0;
@@ -2842,7 +2834,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     const deferred = previewDeferredReloadRef.current;
     previewDeferredReloadRef.current = null;
     if (deferred) settingsReloadDebouncerRef.current?.schedule(() => settingsReloadRunnerRef.current?.run(deferred));
-    if (preloadAllowedRef.current) scheduleAdjacentPreloadsDebounced(500);
+    if (preloadAllowedRef.current) queueAdjacentPreloads(500);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Schedulers read refs; only the drag flag drives this.
   }, [livePreview]);
 
@@ -2939,7 +2931,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       disposeSpareSlots();
       timer = window.setTimeout(() => {
         paginatorRef.current?.reflow();
-        if (preloadAllowedRef.current) scheduleAdjacentPreloadsDebounced(250);
+        if (preloadAllowedRef.current) queueAdjacentPreloads(250);
       }, 250);
     });
     ro.observe(el);
@@ -2988,6 +2980,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     // 页数未知时不执行，但保留最后一个方向；display-ready 后最多消费一次。
     const immediate = turnIntentRef.current.request(dir);
     if (immediate === null) return;
+    preloadSchedule.direction = immediate;
+    if (approachingChapterEdge() && preloadAllowedRef.current) queueAdjacentPreloads();
     if (latestRenderSettingsRef.current.readingMode === "scroll") {
       // 滚动模式：命令含义是移动视口约 0.9 屏；只有真实边界才换章。
       // 不用虚拟 currentPage 判断章尾，也不把惯性滚动变成连续切章。
@@ -3412,7 +3406,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
           !active || !p || active.spineIndex === null || !active.ready || active.state.status !== "ready" ||
           active.state.empty || !p.pageMotionIdle || p.flowsVertically || liveSeam() || joinMotionRef.current ||
           p.currentPage !== (direction === 1 ? 0 : p.pageCount - 1)) return null;
-        const chain = [active, ...extendSeamChain(active, active, direction, 2)];
+        const chain = [active, ...extendSeamChain(active, active, direction, LIVE_READER_FRAMES.length - 1)];
         for (const slot of chain) {
           if (slot === active || !slot.paginator) continue;
           const edge = direction === 1 ? 0 : Math.max(0, slot.paginator.pageCount - 1);
@@ -3923,7 +3917,12 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const adoptedFor = (layer: PresentationLayer, layerProps: ReaderViewProps) => {
     const previous = committed.current;
     if (!stackOn || previous.book !== props.book || previous.anchorNonce !== props.anchorNonce ||
-      previous.layers.get(layer.key) !== layer.spineIndex || layerProps.preciseTarget) return null;
+      layerProps.preciseTarget) return null;
+    const lastIndex = previous.layers.get(layer.key);
+    // Retiring a visible pair can select its other leaf as the return edge. Both leaves already exist.
+    const parkedPair = layer.kind === "pair" && layer.role === "standby" && lastIndex !== undefined &&
+      layerHandles.current.get(layer.key)?.current?.seamReady?.("end");
+    if (lastIndex !== layer.spineIndex && !parkedPair) return null;
     // Claim both main->standby and standby->main at the already displayed
     // edge. In particular a ready chapter end must not flash its first page.
     if (layer.kind === "paged" && !layerHandles.current.get(layer.key)?.current?.seamReady?.(

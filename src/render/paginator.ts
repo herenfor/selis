@@ -1074,6 +1074,7 @@ export class ChapterPaginator {
       if (result.settled) return "chapter";
       // 去章边途中的同向第二次独立命令：预约一次，落定于真实章边后执行。
       this.pageMotionPendingChapter = direction;
+      if (this.settings.preloadNextChapter && this.settings.seamlessChapterTurn) motion.driver.expediteLanding();
       return "reserved";
     }
     return result.kind === "duplicate" ? "duplicate" : "unavailable";

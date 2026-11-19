@@ -21,6 +21,7 @@ import {
   type SettlePlan,
 } from "../render/pageMotion";
 import { pageAxisSign, type PageProgression } from "../render/pagedDirection";
+import { expediteChapterHandoff } from "../render/chapterHandoffMotion";
 
 const KEYFRAMES = 32;
 
@@ -148,6 +149,11 @@ export class ChapterSeamDriver implements PageMotionDriver {
     });
   }
 
+  /** A further turn already needs the next track. Finish this hand-off without jumping the visible strip. */
+  expediteLanding(): void {
+    expediteChapterHandoff(this.animations);
+  }
+
   /** 撤掉各屏的平移（交还给正常的单层显示）。 */
   dispose(): void {
     if (this.disposed) return;
@@ -273,6 +279,7 @@ export class ChapterSeam {
     const result = this.session.turn(inputId, direction);
     if (result.kind === "moving") return "moving";
     if (result.kind === "duplicate") return "duplicate";
+    if (result.kind === "boundary" && this.session.state.kind === "settling") this.driver.expediteLanding();
     return "beyond";
   }
 

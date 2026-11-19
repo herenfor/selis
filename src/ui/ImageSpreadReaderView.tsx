@@ -267,7 +267,8 @@ export const ImageSpreadReaderView = forwardRef<ReaderHandle, Props>(function Im
         restoreTicket={selected ? props.restoreTicket : null}
         startAtEnd={selected ? props.startAtEnd : { nonce: 0, atEnd: false }}
         notes={selected ? props.notes : props.notesForChapter?.(index) ?? []}
-        adoptedNavigation={selected ? props.adoptedNavigation : null}
+        adoptedNavigation={selected ? props.adoptedNavigation : props.adoptedNavigation &&
+          { spineIndex: index, anchorNonce: 0, startNonce: 0 }}
         externalSeam={props.externalSeam ? leafExternalSeam : undefined}
         inputPaused={props.inputPaused || !ready}
         onPageState={(state) => {

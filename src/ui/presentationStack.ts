@@ -156,10 +156,12 @@ export function planPresentationLayers(
       if (!spread) break;
       index = nextLinearIndex(book, spread.right ?? spread.left, 1);
     }
-    parked = index >= 0 ? index : current.left;
+    // Unknown candidates are classified by the host. Loading a full paged iframe here
+    // would decode each upcoming plate twice as the classifier advances through a run.
+    parked = index >= 0 && peek(index) === null ? index : -1;
   }
 
-  const layers: PresentationLayer[] = [
+  const layers: PresentationLayer[] = parked < 0 ? [] : [
     { key: pagedKey, kind: "paged", spineIndex: current ? parked : spineIndex,
       role: current ? "standby" : "main", edge: "start" },
   ];
@@ -168,7 +170,7 @@ export function planPresentationLayers(
   if (current && prevIndex >= 0 && peek(prevIndex) === null) {
     // Only immediate neighbors need ready screens. Reuse the resident paged
     // view for the previous edge unless the next edge also needs it.
-    const nextNeedsPaged = !nextPair && parked === nextIndex;
+    const nextNeedsPaged = nextIndex >= 0 && parked === nextIndex;
     const otherKey = pagedKey === PAGED_LAYER ? "paged-return" : PAGED_LAYER;
     prevPagedKey = nextNeedsPaged && resident?.spineIndex !== prevIndex ? otherKey : pagedKey;
     nextPagedKey = nextNeedsPaged && prevPagedKey === pagedKey ? otherKey : pagedKey;
@@ -242,7 +244,7 @@ export function planPresentationLayers(
   return {
     layers,
     mainKey,
-    nextKey: nextPair ? pairLayerKey(nextPair) : current && parked === nextIndex ? nextPagedKey : null,
+    nextKey: nextPair ? pairLayerKey(nextPair) : current && nextIndex >= 0 && parked === nextIndex ? nextPagedKey : null,
     nextIndex,
     prevKey: prevPair ? pairLayerKey(prevPair) : prevPagedKey,
     prevIndex,

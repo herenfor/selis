@@ -9,6 +9,7 @@
  *
  * 视觉阅读偏移 = 窗口 scrollLeft + MID 屏宽 − translateX。
  */
+import { expediteChapterHandoff } from "./chapterHandoffMotion";
 import type { InterruptResult, MotionSample, PageMotionDriver, SettlePlan } from "./pageMotion";
 import { settleProgress } from "./pageMotion";
 import { pageAxisSign, readPageScroll, writePageScroll, type PageProgression } from "./pagedDirection";
@@ -186,6 +187,10 @@ export class TransformPageMotion implements PageMotionDriver {
       this.animation = null;
       this.onFault(error);
     });
+  }
+
+  expediteLanding(): void {
+    if (this.animation) expediteChapterHandoff([this.animation, ...this.companionAnimations]);
   }
 
   /** 落定只更新视觉位置；窗口由分页器的空闲租约或显式导航撤除。 */

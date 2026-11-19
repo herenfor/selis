@@ -4,6 +4,7 @@ import { ChapterSeam } from "./chapterSeam";
 /** Two iframe stand-ins: inline transform plus a manually finished WAAPI animation. */
 function fakeElement() {
   const styles = new Map<string, string>();
+  const speed = vi.fn();
   const runs: Array<{ finish(): void; cancelled: boolean }> = [];
   const element = {
     style: {
@@ -18,10 +19,11 @@ function fakeElement() {
       finished.catch(() => {});
       const run = { cancelled: false, finish: () => resolve(), cancel: () => { run.cancelled = true; reject(new Error("cancelled")); } };
       runs.push(run);
-      return { finished, cancel: run.cancel };
+      return { finished, cancel: run.cancel, currentTime: 20, playbackRate: 1,
+        effect: { getComputedTiming: () => ({ endTime: 260 }) }, updatePlaybackRate: speed };
     },
   };
-  return { element: element as unknown as HTMLElement, transform: () => styles.get("transform") ?? null, runs };
+  return { element: element as unknown as HTMLElement, speed, transform: () => styles.get("transform") ?? null, runs };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -88,9 +90,13 @@ describe("ChapterSeam", () => {
   });
 
   it("turns by command, reverses on an opposite command and reports a second same-way turn as beyond", async () => {
-    const { instance, onSettled, finishAll } = seam(1);
+    const { instance, current, neighbor, onSettled, finishAll } = seam(1);
     expect(instance.turn(1, 1)).toBe("moving");
+    expect(current.speed).not.toHaveBeenCalled();
     expect(instance.turn(2, 1)).toBe("beyond");
+    expect(current.speed).toHaveBeenCalledWith(15);
+    expect(neighbor.speed).toHaveBeenCalledWith(15);
+    expect(onSettled).not.toHaveBeenCalled();
     expect(instance.turn(2, 1)).toBe("duplicate");
     expect(instance.turn(3, -1)).toBe("moving");
     await finishAll();

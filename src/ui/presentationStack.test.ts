@@ -47,6 +47,19 @@ describe("planPresentationLayers", () => {
     expect(bounded.lookaheadIndex).toBe(-1);
     expect(bounded.layers.some(l => l.key === "pair:6:7")).toBe(false);
   });
+  it("waits for classification before parking a paged iframe and never parks it on an all-plate run", () => {
+    const tail = { left: 4, right: 5 };
+    const end = { left: 6, right: null };
+    const pairOnly = (i: number) => [cover, contents, tail, end][Math.floor(i / 2)];
+    for (const lookup of [pairOnly, (i: number) => i < 4 ? pairOnly(i) : undefined]) {
+      const plan = planPresentationLayers(book, 2, contents, lookup);
+      expect(plan.layers.some(layer => layer.kind === "paged")).toBe(false);
+    }
+    const last = planPresentationLayers(book, 6, end, pairOnly);
+    expect(last.nextKey).toBeNull();
+    expect(last.prevKey).toBe("pair:4:5");
+  });
+
   it("prepares both ordinary edges around a pair and preserves the returning paged identity", () => {
     // The observed book: an ordinary page at 2, pair 3/4, then pair 5/6.
     const first = { left: 3, right: 4 }, next = { left: 5, right: 6 };
