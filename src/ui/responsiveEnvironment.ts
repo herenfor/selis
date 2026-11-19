@@ -23,6 +23,7 @@ export function classifyViewport(width: number, height: number): ViewportClassif
 }
 
 export interface ResponsiveEnvironment extends ViewportClassification {
+  landscape: boolean;
   /** 触控优先输入：移动 shell 或主指针粗粒度且无 hover。 */
   touchUi: boolean;
   /** 实际 visual viewport 高度，用于 IME/短横屏弹层避免被键盘遮住。 */
@@ -55,6 +56,7 @@ function readEnvironment(shell: string): ResponsiveEnvironment {
     (mediaMatches("(pointer: coarse)") && mediaMatches("(hover: none)"));
   return {
     ...classification,
+    landscape: width > height,
     touchUi,
     visualViewportHeight,
     visualViewportOffsetTop,
@@ -63,7 +65,7 @@ function readEnvironment(shell: string): ResponsiveEnvironment {
 }
 
 function sameEnvironment(a: ResponsiveEnvironment, b: ResponsiveEnvironment): boolean {
-  return a.layout === b.layout &&
+  return a.layout === b.layout && a.landscape === b.landscape &&
     a.shortViewport === b.shortViewport &&
     a.touchUi === b.touchUi &&
     Math.abs(a.visualViewportHeight - b.visualViewportHeight) < 1 &&

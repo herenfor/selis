@@ -1,4 +1,4 @@
-import { ComicReaderView } from "./ui/ComicReaderView";
+import { SourceReaderView } from "./ui/SourceReaderView";
 import { formatListKey } from "./ui/bookFormatText";
 import { supportedBookName } from "./core/documentFormats";
 import { webBookAccept } from "./ui/bookFileTypes";
@@ -112,7 +112,7 @@ import { BookmarkPagesPopover, WARM_BOOKMARK_PAGES_SCREEN } from "./ui/BookmarkP
 import { uiPlural, uiText, useUiText } from "./ui/localization/UiLanguageProvider";
 import { FootnotePop } from "./ui/FootnotePop";
 import { LogPanel, type LogItem } from "./ui/LogPanel";
-import { ReaderView, type ReaderHandle } from "./ui/ReaderView";
+import type { ReaderHandle } from "./ui/ReaderView";
 import { createShelfSessionMemory, ShelfView } from "./ui/ShelfView";
 import { ReaderReturnControl } from "./ui/ReaderReturnControl";
 import { applyDocumentTheme, documentThemeAttributes, useThemeTransition } from "./ui/themeTransitionHost";
@@ -733,6 +733,7 @@ export default function App() {
     noteComposerDirtyRef,
   });
 
+  const canDockSidebar = responsive.landscape && !phoneChrome;
   const sidebarBookKey = currentShelfId ?? book?.metadata.identifier ?? "unshelved";
   const {
     sidebarSide, sidebarNavigationMemory, effectiveSidebarMode,
@@ -740,7 +741,7 @@ export default function App() {
     handleSidebarTabChange, handleSidebarModeChange, handleSidebarClose,
     requestCloseCurrentSurface, handleToggleSidebar, handleOpenBookmarks,
   } = useReaderSidebar({
-    foreground, foregroundRef, setForeground, view, phoneChrome, mobileChrome,
+    foreground, foregroundRef, setForeground, view, canDock: canDockSidebar, mobileChrome,
     sidebarBookKey,
     openPanel, closeForeground, requestCloseForeground,
   });
@@ -1093,8 +1094,6 @@ export default function App() {
   } = useReaderPlatformPreferences({
     runtime, view, viewRef, mobileChrome, theme: settings.theme, setShelfNotice, showReaderNotice,
   });
-
-  const SourceReaderView = book?.sourceFormat === "comic-zip" ? ComicReaderView : ReaderView;
 
   // 打开书后渐进统计章节字数；同一本书切章不重建该任务。
   useEffect(() => {
@@ -2640,6 +2639,7 @@ export default function App() {
           onModeChange={handleSidebarModeChange}
           onClose={handleSidebarClose}
           compact={phoneChrome}
+          canDock={canDockSidebar}
           warm={openingPanels.toc}
           onPrepared={() => openingPanels.prepared(bookKey, "toc")}
           paintWarm={warming("toc")}
@@ -3002,6 +3002,7 @@ export default function App() {
                   </>
                 )}
                 <SourceReaderView
+                  dockedSide={isDockedSidebar ? sidebarSide : null}
                   key={bookKey}
                   ref={readerRef}
                   book={book!}

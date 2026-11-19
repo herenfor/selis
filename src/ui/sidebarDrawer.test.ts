@@ -215,12 +215,13 @@ describe("Zen UI SidebarDrawer 组件与交互契约（Packet B）", () => {
     expect(shared).toContain("分享");
   });
 
-  it("固定驻留（Docked）模式渲染 is-docked 标识且不渲染 backdrop 遮罩", () => {
+  it("固定模式将遮罩切为不拦截输入的驻留态，图钉同步标记按下", () => {
     const html = renderToStaticMarkup(
       createElement(SidebarDrawer, { ...baseProps, mode: "docked" })
     );
     expect(html).toContain("is-docked");
-    expect(html).not.toContain("sidebar-backdrop");
+    expect(html).toContain("sidebar-backdrop can-dock is-docked");
+    expect(html).toContain('aria-pressed="true"');
   });
 
   it("支持左侧 (side-left) 与右侧 (side-right) 方向类，支持左右双向弹出动画契约", () => {

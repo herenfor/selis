@@ -8,6 +8,29 @@
   pointer-events: auto;
 }
 
+/* Keep the same scrim through a pin/unpin, including a mid-flight reversal. */
+.sidebar-backdrop.can-dock {
+  animation: none;
+  opacity: 1;
+  transition: opacity var(--ui-dock) var(--ease-emphasized);
+}
+
+@starting-style {
+  .sidebar-backdrop.can-dock { opacity: 0; }
+}
+
+.sidebar-backdrop.can-dock.is-docked {
+  opacity: 0;
+  z-index: calc(var(--z-ui-docked) - 1);
+  pointer-events: none;
+}
+
+.sidebar-backdrop.can-dock.is-closing {
+  animation: none;
+  opacity: 0;
+  transition: opacity var(--scrim-out) var(--ease-exit);
+}
+
 /* 抽屉类：停在屏幕左右边缘之外，并多让出 24px 阴影。 */
 .sidebar-drawer.side-left {
   --sheet-x: calc(-100% - 24px);

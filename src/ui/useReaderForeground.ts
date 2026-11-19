@@ -153,7 +153,7 @@ interface SidebarWiring {
   foregroundRef: MutableRefObject<ReaderForeground>;
   setForeground: Dispatch<SetStateAction<ReaderForeground>>;
   view: "shelf" | "reader";
-  phoneChrome: boolean;
+  canDock: boolean;
   mobileChrome: boolean;
   sidebarBookKey: string;
   openPanel(panel: ReaderPanelId): void;
@@ -163,7 +163,7 @@ interface SidebarWiring {
 
 /** Sidebar preferences and per-book scroll memories remain local to this App mount. */
 export function useReaderSidebar({
-  foreground, foregroundRef, setForeground, view, phoneChrome, mobileChrome, sidebarBookKey,
+  foreground, foregroundRef, setForeground, view, canDock, mobileChrome, sidebarBookKey,
   openPanel, closeForeground, requestCloseForeground,
 }: SidebarWiring) {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("toc");
@@ -171,7 +171,7 @@ export function useReaderSidebar({
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("overlay");
   const [sidebarPinned, setSidebarPinned] = useState(false);
 
-  // 手机窄窗只派生 overlay 呈现，保留用户的 dock/pinned 偏好，放宽后恢复。
+  // 竖屏与紧凑窗口使用浮窗，保留固定偏好以便回到横屏时恢复。
   const sidebarNavigationMemories = useRef(new Map<string, SidebarNavigationMemory>());
   let sidebarNavigationMemory = sidebarNavigationMemories.current.get(sidebarBookKey);
   if (!sidebarNavigationMemory) {
@@ -179,7 +179,7 @@ export function useReaderSidebar({
     sidebarNavigationMemories.current.set(sidebarBookKey, sidebarNavigationMemory);
   }
 
-  const effectiveSidebarMode: SidebarMode = phoneChrome ? "overlay" : sidebarMode;
+  const effectiveSidebarMode: SidebarMode = canDock ? sidebarMode : "overlay";
 
   const isSidebarOpen =
     view === "reader" &&
@@ -210,6 +210,7 @@ export function useReaderSidebar({
   const handleSidebarModeChange = useCallback((mode: SidebarMode) => {
     setSidebarMode(mode);
     if (mode === "docked") {
+      setSidebarTab(activeSidebarTab);
       setSidebarPinned(true);
       if (
         foregroundRef.current.kind === "panel" &&
@@ -223,14 +224,14 @@ export function useReaderSidebar({
       setSidebarPinned(false);
       openPanel(sidebarTab);
     }
-  }, [sidebarTab, openPanel, closeForeground]);
+  }, [activeSidebarTab, sidebarTab, openPanel, closeForeground, foregroundRef]);
 
   const handleSidebarClose = useCallback(() => {
-    if (!phoneChrome && sidebarMode === "docked") {
+    if (canDock && sidebarMode === "docked") {
       setSidebarPinned(false);
     }
     closeForeground();
-  }, [closeForeground, phoneChrome, sidebarMode]);
+  }, [closeForeground, canDock, sidebarMode]);
 
   /** 键盘/返回键关闭当前可见层；模态（笔记、分享）先关，笔记先走统一 dirty 确认。 */
   const requestCloseCurrentSurface = useCallback((): void => {

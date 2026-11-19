@@ -2884,7 +2884,8 @@ export class ChapterPaginator {
       viewer.scrollTop = directTop;
     } else if (allowLegacy && this.pendingStartAtEnd) {
       viewer.scrollTop = scrollMaxTop(metrics);
-    } else {
+    } else if (!this.externalScroll || !this.isDisplayReady) {
+      // A live continuous chapter keeps the host projection until its resize anchor settles.
       viewer.scrollTop = 0;
     }
     this.lastScrollTop = viewer.scrollTop;

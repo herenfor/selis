@@ -47,7 +47,7 @@ function setup() {
     });
     const sidebar = useReaderSidebar({
       foreground, foregroundRef, setForeground, view: props.view,
-      phoneChrome: props.phone, mobileChrome: props.mobile, sidebarBookKey: props.bookKey,
+      canDock: !props.phone, mobileChrome: props.mobile, sidebarBookKey: props.bookKey,
       openPanel: commands.openPanel, closeForeground: commands.closeForeground,
       requestCloseForeground: commands.requestCloseForeground,
     });
@@ -140,11 +140,12 @@ describe("reader foreground host extraction", () => {
       memoryA.scrollTop.toc = 120;
       memoryA.scrollTop.bookmarks = 40;
       await t.dom.run(() => t.current().sidebar.handleToggleSidebar());
-      await t.dom.run(() => t.current().sidebar.handleSidebarTabChange("notes"));
+      await t.dom.run(() => t.current().commands.openPanel("notes"));
       expect(t.current().sidebar.activeSidebarTab).toBe("notes");
       await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
       expect(t.current().foreground.kind).toBe("none");
       expect(t.current().sidebar.isDockedSidebar).toBe(true);
+      expect(t.current().sidebar.activeSidebarTab).toBe("notes");
       await t.dom.run(() => t.current().sidebar.handleOpenBookmarks());
       expect(t.current().sidebar.sidebarSide).toBe("right");
       expect(t.current().sidebar.activeSidebarTab).toBe("bookmarks");

@@ -128,6 +128,18 @@ describe("scroll mode commands", () => {
     expect(state.scrollProgress).toBeCloseTo(2200 / 4400, 5);
   });
 
+  it("preserves an externally projected position across reflow but still starts a new chapter at the top", () => {
+    const { context, viewer } = scrollContext();
+    delete context.applyScrollRestore; // exercise the real chapter-entry fallback
+    Object.assign(context, { externalScroll: {}, loadSeq: 1, displayReadySeq: 1, displayReadyResult: true });
+    viewer.scrollTop = 1400;
+    internals.recomputeScroll.call(context);
+    expect(viewer.scrollTop).toBe(1400);
+    context.loadSeq = 2;
+    internals.recomputeScroll.call(context);
+    expect(viewer.scrollTop).toBe(0);
+  });
+
   it("does not accumulate wheel deltas into page turns while scrolling", () => {
     const { context, viewer } = scrollContext();
     const preventDefault = vi.fn();

@@ -29,6 +29,7 @@ export interface SidebarDrawerProps {
   onClose: () => void;
   /** 手机窄窗强制浮层，隐藏 pin/dock 入口，避免抽走正文真实宽度。 */
   compact?: boolean;
+  canDock?: boolean;
   /**
    * Keep the closed overlay drawer mounted (prepared when a book opens):
    * laid out hidden and inert; the TOC window waits for a real opening to
@@ -83,6 +84,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onModeChange,
   onClose,
   compact = false,
+  canDock = !compact,
   warm = false,
   onPrepared,
   paintWarm = false,
@@ -110,7 +112,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   // 浮层模式打开时焦点进入抽屉；停靠模式是阅读的一部分，不抢焦点。
   const drawerRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (open && mode === "overlay") drawerRef.current?.focus({ preventScroll: true });
+    const drawer = drawerRef.current;
+    if (open && mode === "overlay" && drawer && !drawer.contains(document.activeElement)) {
+      drawer.focus({ preventScroll: true });
+    }
   }, [open, mode]);
   const localMemory = useRef(createSidebarNavigationMemory());
   const memory = navigationMemory ?? localMemory.current;
@@ -226,10 +231,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   return (
     <>
       {/* 浮动微浮岛遮罩模式下渲染背景半透明蒙层 */}
-      {open && mode === "overlay" && (
+      {open && (
         <div
-          className={`sidebar-backdrop${isClosing ? " is-closing" : ""}`}
-          onClick={requestClose}
+          className={`sidebar-backdrop${canDock ? " can-dock" : ""}${mode === "docked" ? " is-docked" : ""}${isClosing ? " is-closing" : ""}`}
+          onClick={mode === "overlay" ? requestClose : undefined}
           aria-hidden="true"
         />
       )}
@@ -276,11 +281,15 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
           </div>
 
           <div className="sidebar-header-actions">
-            {!compact && (
+            {canDock && (
             <button
               type="button"
               className={`sidebar-icon-btn sidebar-pin-btn${mode === "docked" ? " active" : ""}`}
-              onClick={() => onModeChange(mode === "docked" ? "overlay" : "docked")}
+              onClick={() => {
+                cancelClose();
+                onModeChange(mode === "docked" ? "overlay" : "docked");
+              }}
+              aria-pressed={mode === "docked"}
               title={mode === "docked" ? t("sidebar.unpin.tip") : t("sidebar.pin")}
               aria-label={mode === "docked" ? t("sidebar.unpin") : t("sidebar.pin")}
             >

@@ -1,3 +1,4 @@
+import { observePagedReaderResize } from "./pagedReaderResize";
 import { SeamGestureInput } from "./seamGestureInput";
 import { pageAxisSign } from "../render/pagedDirection";
 import { surfaceBackground } from "./readerSurfaceBackground";
@@ -2912,33 +2913,18 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   }, [settings.preloadNextChapter, book.fixedLayout, settings.readingMode, activeFrame, props.presentationStandby,
     props.standbyPrepareThrough]);
 
-  // 尺寸变化 → 重排（左右拉伸窗口等场景）。
-  // 用 debounce：拉伸过程中 ResizeObserver 持续触发，只重置定时器、不做重排；
-  // 停止 250ms 后才重排一次。浏览器窗口边框拖动没有 mouseup 事件，
-  // 静默期就是"确认拉伸结束"的信号。
-  // 关键：重排时不重新捕获锚点——此时用上一次稳定状态（翻页/上次重排）
-  // 存下的锚点，保证正在读的内容在拉伸后仍回到页面中部。
+  // Keep the stable reader container (not a promoted chapter iframe) as the
+  // resize target. The paginator restores its last stable reading anchor.
   useEffect(() => {
-    // Observe the stable reader viewport rather than whichever iframe is
-    // currently active. Promoting a prepared chapter must not look like a
-    // resize and discard the previous-chapter cache we just retained.
-    const el = readerContainerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    let timer = 0;
-    const ro = new ResizeObserver(() => {
-      window.clearTimeout(timer);
+    const host = readerContainerRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    return observePagedReaderResize(host, () => {
       resetFullBookWarmup();
       disposeSpareSlots();
-      timer = window.setTimeout(() => {
-        paginatorRef.current?.reflow();
-        if (preloadAllowedRef.current) queueAdjacentPreloads(250);
-      }, 250);
+    }, () => {
+      paginatorRef.current?.reflow();
+      if (preloadAllowedRef.current) queueAdjacentPreloads(250);
     });
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      window.clearTimeout(timer);
-    };
   }, [book.fixedLayout, settings.preloadNextChapter]);
 
   // 翻页逻辑（滚轮与按钮/键盘共用）
