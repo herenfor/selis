@@ -35,6 +35,29 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.5",
+    status: "released",
+    releasedOn: "2026-11-19",
+    items: [
+      {
+        category: "new",
+        text: "分享书摘可以带上书里的高亮，还能单独给这张图换重点色；和摘录有部分重叠的笔记也能逐条选进图里。",
+      },
+      {
+        category: "improved",
+        text: "分享时可以在原文里逐句删补摘录的开头和结尾，高亮和笔记会跟着范围一起更新。",
+      },
+      {
+        category: "fixed",
+        text: "带 Ruby 注音的书摘，分享图在横排和竖排都会保留注音，复制文字时只复制正文。",
+      },
+      {
+        category: "fixed",
+        text: "快速连续翻页时跨章更顺，经过短彩页章节不再卡顿；修好了快速连翻或整屏滑动偶尔跳回本章首页的问题。",
+      },
+    ],
+  },
+  {
     version: "0.4.4",
     status: "released",
     releasedOn: "2026-11-17",
