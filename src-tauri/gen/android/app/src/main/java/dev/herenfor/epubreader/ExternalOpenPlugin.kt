@@ -13,6 +13,32 @@ import java.lang.ref.WeakReference
 import java.util.UUID
 import org.json.JSONObject
 
+private const val EPUB_MIME = "application/epub+zip"
+private const val TEXT_MIME = "text/plain"
+private val EXTERNAL_OPEN_EXTENSIONS = listOf(".epub", ".txt")
+
+/**
+ * True when a VIEW intent belongs in the external-open inbox.
+ *
+ * MIME is the primary signal for content:// URIs whose last path segment is
+ * opaque; the import pipeline still inspects the actual bytes/name and rejects
+ * non-book files. The extension fallback keeps file:// and providers that omit
+ * a type working without accepting unrelated binary formats.
+ */
+internal fun isSupportedExternalOpen(
+    action: String?,
+    scheme: String?,
+    mimeType: String?,
+    lastPathSegment: String?,
+): Boolean {
+    if (action != Intent.ACTION_VIEW) return false
+    if (scheme != "content" && scheme != "file") return false
+    val type = mimeType?.substringBefore(';')?.trim()?.lowercase()
+    if (type == EPUB_MIME || type == TEXT_MIME) return true
+    val name = lastPathSegment?.lowercase() ?: return false
+    return EXTERNAL_OPEN_EXTENSIONS.any { name.endsWith(it) }
+}
+
 @InvokeArg
 class ExternalOpenAckArgs {
     lateinit var requestId: String
@@ -41,10 +67,7 @@ internal object ExternalOpenInbox {
     fun capture(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
         val uri = intent.data ?: return
-        if (uri.scheme != "content" && uri.scheme != "file") return
-        val isEpub = intent.type.equals("application/epub+zip", ignoreCase = true) ||
-            uri.lastPathSegment?.endsWith(".epub", ignoreCase = true) == true
-        if (!isEpub) return
+        if (!isSupportedExternalOpen(intent.action, uri.scheme, intent.type, uri.lastPathSegment)) return
         val kind = if (uri.scheme == "content") "contentUri" else "path"
         val value = if (kind == "path") uri.path ?: return else uri.toString()
         if (pending.any { it.kind == kind && it.value == value }) return
