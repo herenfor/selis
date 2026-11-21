@@ -34,9 +34,7 @@ import type { NoteHighlightGroup } from "./noteHighlights";
 import { createBackdropCompatibilitySession } from "./backdropCompatibility";
 import { mediaFitCssSize, planMediaFit, planTableWidth, resolveAvailableInlineWidth, tableFitCssWidth, tableFitsInlineBounds } from "./contentFit";
 import type { InlineContentBounds } from "./contentFit";
-import type { RawTextRange } from "../core/exactTextHits";
-import { resolveExactTextHits } from "../core/exactTextHits";
-import { resolveSearchOccurrence } from "../core/searchOccurrence";
+import { resolveSearchTarget, type SearchTargetRequest } from "./searchTarget";
 import { adaptNavigationAnchor } from "./navigationAnchor";
 import type { PersistedNavigationAnchor } from "./navigationAnchor";
 import { createReaderTheme } from "./readerTheme";
@@ -79,7 +77,7 @@ import { VerticalPageGaps } from "./vertical/pageGaps";
 import { installChapterMediaPlayback } from "./mediaPlayback";
 import type { ChapterMediaPlayback, MediaPlaybackText } from "./mediaPlayback";
 import { DEFAULT_READER_END_TEXT, INITIAL_RENDER_GATE_TIMEOUT_MS, NATIVE_SNAP_SETTLE_MS, SPREAD_AREA_ROOT_STYLE_PROPERTIES, isChapterMeasurementCurrent, cloneSearchOccurrence, cloneExactTextHits, cloneDisplayTarget, visibleSamplePoints, captureAnchorAtPoint, verticalAnchorPoints, captureFirstAnchor, captureVisibleAnchor, hasModernReadingAnchor, hasSemanticRestoreTarget, resolveRestoredPage, columnToView, fragmentOffsetCache, getFragmentNavigation, syncFragmentHash, getBorderBoxWidth, hasPercentageHorizontalMargin, hasAuthoredHorizontalMargin, hasAuthoredSizingIntent, shouldApplyBookMarginCompensation, isMeaningfulHorizontalMargin, shouldProbeAuthoredHorizontalMargin, hasComputedPercentageHorizontalMargin, resolvedMarginKind, planAutoBlockBox, resolveBlockContainingContentWidth, readComputedHorizontalMarginSpecifiedValues, getActiveCssCondition, getAuthoredPercentageWidth, getPercentageFloatGroupMembers, getSafePercentageFloatGroupMembers, getPercentageFloatGroupTargetWidths, isPercentageFloatGroupGeometryValid, hasPercentageHorizontalMarginInRules, isPercentageMarginLayout, planColumnIndentMargins, shouldKeepContainingBlockMarginsWhenBaseWouldOverflow, isSymmetricHorizontalMargin, getReaderTopUaSymmetricInsetMaxWidth, isAutoLikeHorizontalMargin, shouldKeepSymmetricMarginsCentered, shouldKeepCenteredAuthorMargins, getReaderTopFloatLayoutMargins, getReaderAutoBlockInsets, getReaderTopFloatContainmentMargins, shouldRestoreReaderTopAutoMargin, createAutoMarginBatch, isAuthorFullWidthValue, hasAuthoredFullWidthIntentInRules, hasAuthorFullWidthIntent, hasAuthorMediaBreakoutIntent, isInsideAny, horizontalPaddingBorder, writeContentFitStyles, restoreContentFitStyles, hasTrailingManualPaddingWhitespace, hasVisibleInlineBox, shouldApplyInlineBoxOverflowFix } from "./paginator/helpers";
-import type { ReaderEndText, SpreadAreaSnapshot, ChapterState, ChapterMeasurementToken, FootnotePayload, ReaderNoteForPaginator, SelectionContextPayload, ImageActivationPayload, LoadOptions, RestoreReportTicket, RestoreReportResult, WithinChapterNavigationOptions, ReadingAnchor, ExternalScrollAdapter, ReadingAnchorAndContentY, MediaReadingAnchor, MediaAnchorAndContentY, ResolvedContentFraction, PreciseNavigationRequest, SearchHighlightTarget, PendingPreciseNavigation, ResolvedSearchTarget, VisibleSamplePoint, AnchorSampleOptions, VisibleMediaSample, PreciseNavigationStatus, ResolvedAnchorColumn, BookmarkPlacementInput, FragmentNavigation, AuthoredHorizontalMarginResult, AuthoredSizingIntentResult, BoxSizing, PercentageFloatGroupEntry, PercentageFloatGroupRect, ReaderTopUaSymmetricInsetInput, CenteredAuthorMarginInput, ReaderTopFloatContainmentInput, ReaderTopFloatLayoutInput, ReaderTopAutoMarginRestoreInput, AutoMarginFix, ContentFitWrite, ContentFitFix, CenteredTitleCandidate, CenteredTitleFix, ChapterPaginatorOptions } from "./paginator/helpers";
+import type { ReaderEndText, SpreadAreaSnapshot, ChapterState, ChapterMeasurementToken, FootnotePayload, ReaderNoteForPaginator, SelectionContextPayload, ImageActivationPayload, LoadOptions, RestoreReportTicket, RestoreReportResult, WithinChapterNavigationOptions, ReadingAnchor, ExternalScrollAdapter, ReadingAnchorAndContentY, MediaReadingAnchor, MediaAnchorAndContentY, ResolvedContentFraction, PreciseNavigationRequest, SearchHighlightTarget, PendingPreciseNavigation, VisibleSamplePoint, AnchorSampleOptions, VisibleMediaSample, PreciseNavigationStatus, ResolvedAnchorColumn, BookmarkPlacementInput, FragmentNavigation, AuthoredHorizontalMarginResult, AuthoredSizingIntentResult, BoxSizing, PercentageFloatGroupEntry, PercentageFloatGroupRect, ReaderTopUaSymmetricInsetInput, CenteredAuthorMarginInput, ReaderTopFloatContainmentInput, ReaderTopFloatLayoutInput, ReaderTopAutoMarginRestoreInput, AutoMarginFix, ContentFitWrite, ContentFitFix, CenteredTitleCandidate, CenteredTitleFix, ChapterPaginatorOptions } from "./paginator/helpers";
 
 
 export { isChapterMeasurementCurrent, hasSemanticRestoreTarget, resolveRestoredPage, columnToView, getFragmentNavigation, syncFragmentHash, getBorderBoxWidth, hasPercentageHorizontalMargin, hasAuthoredHorizontalMargin, hasAuthoredSizingIntent, shouldApplyBookMarginCompensation, isMeaningfulHorizontalMargin, shouldProbeAuthoredHorizontalMargin, hasComputedPercentageHorizontalMargin, resolvedMarginKind, planAutoBlockBox, readComputedHorizontalMarginSpecifiedValues, getAuthoredPercentageWidth, getPercentageFloatGroupMembers, getSafePercentageFloatGroupMembers, getPercentageFloatGroupTargetWidths, isPercentageFloatGroupGeometryValid, hasPercentageHorizontalMarginInRules, isPercentageMarginLayout, planColumnIndentMargins, shouldKeepContainingBlockMarginsWhenBaseWouldOverflow, isSymmetricHorizontalMargin, getReaderTopUaSymmetricInsetMaxWidth, isAutoLikeHorizontalMargin, shouldKeepSymmetricMarginsCentered, shouldKeepCenteredAuthorMargins, getReaderTopFloatLayoutMargins, getReaderAutoBlockInsets, getReaderTopFloatContainmentMargins, shouldRestoreReaderTopAutoMargin, createAutoMarginBatch, isAuthorFullWidthValue, hasAuthoredFullWidthIntentInRules, hasTrailingManualPaddingWhitespace, hasVisibleInlineBox, shouldApplyInlineBoxOverflowFix };
@@ -5239,12 +5237,8 @@ export class ChapterPaginator {
     clearSearchHighlight(this.contentDoc);
   }
 
-  private resolveTextRangeCol(index: VisibleTextIndex, start: number, end: number): number | null {
-    const doc = this.contentDoc;
-    const viewer = this.viewer;
-    if (!doc || !viewer || this.step <= 0) return null;
-    const range = index.rangeForOffsets(doc, start, end);
-    if (!range) return null;
+  private resolveTextRangeCol(range: Range): number | null {
+    if (!this.contentDoc || !this.viewer || this.step <= 0) return null;
     try {
       const rects = Array.from(range.getClientRects())
         .filter((candidate) => candidate.width > 0 || candidate.height > 0);
@@ -5282,51 +5276,16 @@ export class ChapterPaginator {
       return;
     }
     const resolved = this.resolveRequestedSearchTarget(index, this.searchHighlightTarget);
-    if (!resolved) {
+    if (!resolved?.ranges) {
       clearSearchHighlight(doc);
       this.searchHighlightTarget = null;
       return;
     }
-    const ranges = this.dedupeHighlightRanges(resolved.paintHits)
-      .map((range) => resolved.paintIndex.rangeForOffsets(doc, range.start, range.end))
-      .filter((range): range is Range => range !== null);
-    if (ranges.length === 0) {
-      clearSearchHighlight(doc);
-      this.searchHighlightTarget = null;
-      return;
-    }
-    const result = applySearchHighlight(doc, ranges);
+    const result = applySearchHighlight(doc, resolved.ranges);
     if (result === "unsupported") {
       clearSearchHighlight(doc);
       this.searchHighlightTarget = null;
     }
-  }
-
-  private dedupeHighlightRanges(ranges: readonly RawTextRange[]): RawTextRange[] {
-    const seen = new Set<string>();
-    const result: RawTextRange[] = [];
-    for (const range of ranges) {
-      if (range.end <= range.start) continue;
-      const key = `${range.start}:${range.end}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result.push(range);
-    }
-    return result;
-  }
-
-  private buildHighlightRanges(
-    doc: Document,
-    index: VisibleTextIndex,
-    resolved: readonly RawTextRange[]
-  ): Range[] | null {
-    const ranges: Range[] = [];
-    for (const range of this.dedupeHighlightRanges(resolved)) {
-      const domRange = index.rangeForOffsets(doc, range.start, range.end);
-      if (!domRange) return null;
-      ranges.push(domRange);
-    }
-    return ranges.length > 0 ? ranges : null;
   }
 
   /** Resolve an immutable request anchor without borrowing the live page sample. */
@@ -5348,58 +5307,21 @@ export class ChapterPaginator {
     }
   }
 
-  /**
-   * Resolve the requested hit group once, using the new-search occurrence
-   * identity when present and the legacy exact range resolver only when this
-   * request did not come from a new search.
-   */
-  private resolveRequestedTextRanges(
-    index: VisibleTextIndex,
-    request: Pick<PreciseNavigationRequest, "textHits" | "occurrence">,
-  ): RawTextRange[] | null {
-    if (request.occurrence) {
-      return resolveSearchOccurrence(index.codePoints, request.occurrence);
-    }
-    if (request.textHits && request.textHits.length > 0) {
-      return resolveExactTextHits(index.codePoints, request.textHits);
-    }
-    return null;
+  private resolveRequestedSearchTarget(index: VisibleTextIndex, request: SearchTargetRequest) {
+    if (!this.contentDoc || !this.viewer) return null;
+    const version = request.displayTarget ? this.getTextProjectionVersion() : undefined;
+    return resolveSearchTarget(this.contentDoc, this.viewer, index, request, version);
   }
 
-  /**
-   * R2: canonical identity first, then optional display target. The returned
-   * paint index is either the canonical projected index (legacy/notes) or a
-   * real display-only index built from the live DOM.
-   */
-  private resolveRequestedSearchTarget(
-    index: VisibleTextIndex,
-    request: Pick<PreciseNavigationRequest, "textHits" | "occurrence" | "displayTarget">,
-  ): ResolvedSearchTarget | null {
-    const canonicalHits = this.resolveRequestedTextRanges(index, request);
-    if (!canonicalHits) return null;
-    const target = request.displayTarget;
-    if (!target) {
-      return { canonicalHits, paintIndex: index, paintHits: canonicalHits };
-    }
-    if (target.projectionVersion !== this.getTextProjectionVersion()) return null;
-    const doc = this.contentDoc;
-    const viewer = this.viewer;
-    if (!doc || !viewer) return null;
-    const paintIndex = buildVisibleTextIndex(doc, viewer);
-    const paintHits = resolveSearchOccurrence(paintIndex.codePoints, target.occurrence);
-    if (!paintHits || paintHits.length === 0) return null;
-    return { canonicalHits, paintIndex, paintHits };
-  }
-
-  private candidateForRange(index: VisibleTextIndex, range: RawTextRange): ReadingAnchor {
+  private candidateForTextOffset(index: VisibleTextIndex, start: number): ReadingAnchor {
     return {
       index: -1,
       ratio: 0,
-      charsRead: range.start,
+      charsRead: start,
       totalChars: index.totalChars,
       mediaUnits: index.mediaUnits,
-      textOffset: range.start,
-      textSnippet: index.snippetAt(range.start),
+      textOffset: start,
+      textSnippet: index.snippetAt(start),
     };
   }
 
@@ -5427,15 +5349,11 @@ export class ChapterPaginator {
     }
     if ((!request.textHits || request.textHits.length === 0) && !request.occurrence) return "unresolved";
     const resolvedTarget = this.resolveRequestedSearchTarget(index, request);
-    if (!resolvedTarget) return "unresolved";
-    const first = resolvedTarget.canonicalHits[0];
-    const firstPaint = resolvedTarget.paintHits[0];
-    const ranges = this.buildHighlightRanges(doc, resolvedTarget.paintIndex, resolvedTarget.paintHits);
-    if (!ranges) return "unresolved";
+    if (!resolvedTarget?.ranges) return "unresolved";
+    const { ranges, anchorOffset } = resolvedTarget;
     if (this.scrollMode) {
-      const target = resolvedTarget.paintIndex.rangeForOffsets(doc, firstPaint.start, firstPaint.end);
       const inset = Math.round(Math.min(24, Math.max(0, viewer.clientHeight * 0.04)));
-      const resolvedTop = target ? this.resolveScrollTopForRange(target, inset) : null;
+      const resolvedTop = this.resolveScrollTopForRange(ranges[0], inset);
       if (resolvedTop === null) return "unresolved";
       this.cancelPendingAnchorSample?.();
       this.closeFootnoteForNavigation();
@@ -5456,11 +5374,11 @@ export class ChapterPaginator {
       };
       return "located";
     }
-    const page = this.resolveTextRangeCol(resolvedTarget.paintIndex, firstPaint.start, firstPaint.end);
+    const page = this.resolveTextRangeCol(ranges[0]);
     if (page === null || !Number.isSafeInteger(page) || page < 0 || page >= this.metrics.pageCount) {
       return "unresolved";
     }
-    const candidate = this.candidateForRange(index, first);
+    const candidate = this.candidateForTextOffset(index, anchorOffset);
     syncFragmentHash(this.iframe.contentWindow, "");
     this.commitWithinChapterPage(page, candidate, { preserveCandidate: true });
     const applied = applySearchHighlight(doc, ranges);
@@ -5508,19 +5426,16 @@ export class ChapterPaginator {
       return status;
     }
 
-    const first = resolvedTarget.canonicalHits[0];
-    const firstPaint = resolvedTarget.paintHits[0];
-    const ranges = this.buildHighlightRanges(doc, resolvedTarget.paintIndex, resolvedTarget.paintHits);
+    const { ranges, anchorOffset } = resolvedTarget;
     if (!ranges) {
-      const status: PreciseNavigationStatus = hasReference ? "located-reference" : "unresolved";
+      const status = hasReference ? "located-reference" : "unresolved";
       this.reportPreciseStatus(request, status, false);
       return status;
     }
     if (this.scrollMode) {
-      const target = resolvedTarget.paintIndex.rangeForOffsets(doc, firstPaint.start, firstPaint.end);
       const viewer = this.viewer;
       const inset = viewer ? Math.round(Math.min(24, Math.max(0, viewer.clientHeight * 0.04))) : 0;
-      const resolvedTop = target && viewer ? this.resolveScrollTopForRange(target, inset) : null;
+      const resolvedTop = viewer ? this.resolveScrollTopForRange(ranges[0], inset) : null;
       if (resolvedTop === null || !viewer) {
         const status: PreciseNavigationStatus = hasReference ? "located-reference" : "unresolved";
         this.reportPreciseStatus(request, status, false);
@@ -5546,14 +5461,14 @@ export class ChapterPaginator {
       this.reportPreciseStatus(request, "located", true);
       return "located";
     }
-    const page = this.resolveTextRangeCol(resolvedTarget.paintIndex, firstPaint.start, firstPaint.end);
+    const page = this.resolveTextRangeCol(ranges[0]);
     if (page === null || !Number.isSafeInteger(page) || page < 0 || page >= this.metrics.pageCount) {
       const status: PreciseNavigationStatus = hasReference ? "located-reference" : "unresolved";
       this.reportPreciseStatus(request, status, false);
       return status;
     }
 
-    const candidate = this.candidateForRange(index, first);
+    const candidate = this.candidateForTextOffset(index, anchorOffset);
     syncFragmentHash(this.iframe.contentWindow, "");
     this.commitWithinChapterPage(page, candidate, { preserveCandidate: request.kind === "search" });
     const applied = applySearchHighlight(doc, ranges);
@@ -6155,10 +6070,8 @@ export class ChapterPaginator {
     const index = this.textIndex;
     if (this.disposed || !viewer || !doc || !index) return null;
     const resolved = this.resolveRequestedSearchTarget(index, request);
-    if (!resolved) return null;
-    const firstPaint = resolved.paintHits[0];
-    const target = resolved.paintIndex.rangeForOffsets(doc, firstPaint.start, firstPaint.end);
-    if (!target) return null;
+    if (!resolved?.ranges) return null;
+    const target = resolved.ranges[0];
     let rect: { top: number } | null = null;
     try {
       const rects = Array.from(target.getClientRects()).filter(
@@ -6183,9 +6096,8 @@ export class ChapterPaginator {
     if (this.disposed || !viewer || !doc || !index || !this._currentPath) return "unresolved";
     if ((!request.textHits || request.textHits.length === 0) && !request.occurrence) return "unresolved";
     const resolved = this.resolveRequestedSearchTarget(index, request);
-    if (!resolved) return "unresolved";
-    const ranges = this.buildHighlightRanges(doc, resolved.paintIndex, resolved.paintHits);
-    if (!ranges) return "unresolved";
+    if (!resolved?.ranges) return "unresolved";
+    const { ranges } = resolved;
     this.cancelPendingAnchorSample?.();
     this.clearSearchHighlightForDocument();
     const applied = applySearchHighlight(doc, ranges);

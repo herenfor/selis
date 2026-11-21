@@ -1,6 +1,7 @@
 import { parseHTML } from "linkedom";
 import { describe, expect, it } from "vitest";
-import { ChapterPaginator } from "./paginator";
+import { dedupeHighlightRanges, resolveSearchTarget } from "./searchTarget";
+import { searchBook } from "../core/search";
 import { buildVisibleTextIndex, collectVisibleTextNodes } from "./textAnchor";
 import { compileTextProjection } from "./textProjection/compile";
 import { createDisplaySearchSession } from "./textProjection/displaySearch";
@@ -59,7 +60,7 @@ function installFakeRanges(doc: Document): void {
   }) as unknown as () => Range;
 }
 
-describe("R2 paginator display target resolver", () => {
+describe("projected search targets", () => {
   it("produces two different live DOM ranges for two display hits of one canonical replacement", async () => {
     const compiled = await compileTextProjection({
       mode: "original",
@@ -79,26 +80,7 @@ describe("R2 paginator display target resolver", () => {
     await textProjection.apply(visibleNodes, compiled);
     const canonicalIndex = buildVisibleTextIndex(document as unknown as Document, viewer, textProjection);
 
-    const prototype = ChapterPaginator.prototype as unknown as {
-      resolveRequestedSearchTarget: (this: unknown, index: unknown, request: unknown) => {
-        canonicalHits: Array<{ start: number; end: number }>;
-        paintIndex: ReturnType<typeof buildVisibleTextIndex>;
-        paintHits: Array<{ start: number; end: number }>;
-      } | null;
-      resolveRequestedTextRanges: (index: unknown, request: unknown) => Array<{ start: number; end: number }> | null;
-      dedupeHighlightRanges: (ranges: readonly { start: number; end: number }[]) => Array<{ start: number; end: number }>;
-      buildHighlightRanges: (this: unknown, doc: Document, index: unknown, ranges: readonly { start: number; end: number }[]) => Range[] | null;
-    };
-
-    const fake = {
-      contentDoc: document as unknown as Document,
-      viewer,
-      getTextProjectionVersion: () => compiled.version,
-      resolveRequestedTextRanges: prototype.resolveRequestedTextRanges,
-      dedupeHighlightRanges: prototype.dedupeHighlightRanges,
-    };
-
-    const resolvedFor = (index: number) => prototype.resolveRequestedSearchTarget.call(fake, canonicalIndex, {
+    const resolvedFor = (index: number) => resolveSearchTarget(document, viewer, canonicalIndex, {
       textHits: results[index].textHits,
       occurrence: results[index].occurrence,
       displayTarget: {
@@ -106,23 +88,74 @@ describe("R2 paginator display target resolver", () => {
         textHits: results[index].display!.textHits,
         occurrence: results[index].display!.occurrence,
       },
-    });
+    }, compiled.version);
 
     const first = resolvedFor(0);
     const second = resolvedFor(1);
-    expect(first?.canonicalHits).toEqual([{ start: 0, end: 2 }]);
-    expect(second?.canonicalHits).toEqual([{ start: 0, end: 2 }]);
-    expect(first?.paintHits).toEqual([{ start: 0, end: 1 }]);
-    expect(second?.paintHits).toEqual([{ start: 1, end: 2 }]);
-
-    const firstRanges = prototype.buildHighlightRanges.call(fake, document as unknown as Document, first!.paintIndex, first!.paintHits);
-    const secondRanges = prototype.buildHighlightRanges.call(fake, document as unknown as Document, second!.paintIndex, second!.paintHits);
-    const firstRange = firstRanges?.[0] as unknown as FakeRange | undefined;
-    const secondRange = secondRanges?.[0] as unknown as FakeRange | undefined;
+    expect(first?.anchorOffset).toBe(0);
+    expect(second?.anchorOffset).toBe(0);
+    const firstRange = first?.ranges?.[0] as unknown as FakeRange;
+    const secondRange = second?.ranges?.[0] as unknown as FakeRange;
     expect(firstRange).toMatchObject({ startOffset: 0, endOffset: 1 });
     expect(secondRange).toMatchObject({ startOffset: 1, endOffset: 2 });
     expect(firstRange?.startContainer).toBe(secondRange?.startContainer);
     expect(firstRange?.startOffset).not.toBe(secondRange?.startOffset);
     session.dispose();
+  });
+});
+
+describe("search highlight range drawing", () => {
+  it("deduplicates identical ranges but keeps distinct/overlapping real hit ranges", () => {
+    expect(dedupeHighlightRanges([
+      { start: 0, end: 2 },
+      { start: 0, end: 2 },
+      { start: 0, end: 3 },
+      { start: 3, end: 4 },
+    ])).toEqual([
+      { start: 0, end: 2 },
+      { start: 0, end: 3 },
+      { start: 3, end: 4 },
+    ]);
+  });
+});
+
+
+describe("ruby base-text search", () => {
+  it("paints only the matching projected glyphs across a base and the following text", async () => {
+    const compiled = await compileTextProjection({ mode: "original", rules: [{ id: "long", from: "A", to: "XYZ", enabled: true }] });
+    const body = '<p>前<ruby>A<rtc><rt>reading</rt></rtc></ruby>后</p>';
+    const session = createDisplaySearchSession(fakeBook([`<html><body>${body}</body></html>`]), compiled);
+    const [hit] = await session.search("Z后");
+    const { document } = parseHTML(`<html><body><main>${body}</main></body></html>`);
+    const viewer = document.querySelector("main")!;
+    installFakeRanges(document);
+    const projection = new TextProjectionSession();
+    await projection.apply(collectVisibleTextNodes(document, viewer), compiled);
+    const index = buildVisibleTextIndex(document, viewer, projection);
+    const request = { ...hit, displayTarget: hit.display };
+    const resolved = resolveSearchTarget(document, viewer, index, request, compiled.version)!;
+    expect(resolved.anchorOffset).toBe(1);
+    expect(resolved.ranges?.map(r => r.startContainer.textContent!.slice(r.startOffset, r.endOffset))).toEqual(["Z", "后"]);
+    expect(resolveSearchTarget(document, viewer, index, request, "outdated")).toBeNull();
+    session.dispose();
+  });
+
+  it("maps cross-ruby hits and adjacent paragraphs to original DOM positions", async () => {
+    const body = '<p>之前</p><p>也许是<ruby><rb>律😀</rb><rp>（</rp><rt>りつ</rt><rp>）</rp></ruby>你啊。</p><p>绝无可能。</p>';
+    const book = fakeBook([`<html><body>${body}</body></html>`]);
+    const { document } = parseHTML(`<html><body><main>${body}</main></body></html>`);
+    installFakeRanges(document);
+    const viewer = document.querySelector("main")!;
+    const index = buildVisibleTextIndex(document, viewer);
+    for (const query of ["之前", "律😀", "😀你啊", "绝无可能"]) {
+      const [hit] = await searchBook(book, query);
+      expect(hit?.occurrence).toBeDefined();
+      const resolved = resolveSearchTarget(document, viewer, index, hit)!;
+      const ranges = resolved.ranges as unknown as FakeRange[];
+      expect(ranges.map(r => r.startContainer!.textContent!.slice(r.startOffset, r.endOffset)).join("")).toBe(query);
+      expect(ranges.every(r => r.startContainer === r.endContainer)).toBe(true);
+      expect(resolved.anchorOffset).toBe(index.codePoints.indexOf(Array.from(query)[0]));
+    }
+    expect(index.text).toContain("律😀（りつ）你啊");
   });
 });

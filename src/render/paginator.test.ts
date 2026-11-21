@@ -2386,24 +2386,6 @@ describe("precise cross-chapter request resolution", () => {
   });
 });
 
-describe("search highlight range drawing", () => {
-  it("deduplicates identical ranges but keeps distinct/overlapping real hit ranges", () => {
-    const dedupe = (ChapterPaginator.prototype as unknown as {
-      dedupeHighlightRanges: (ranges: Array<{ start: number; end: number }>) => Array<{ start: number; end: number }>;
-    }).dedupeHighlightRanges;
-    expect(dedupe.call(Object.create(ChapterPaginator.prototype), [
-      { start: 0, end: 2 },
-      { start: 0, end: 2 },
-      { start: 0, end: 3 },
-      { start: 3, end: 4 },
-    ])).toEqual([
-      { start: 0, end: 2 },
-      { start: 0, end: 3 },
-      { start: 3, end: 4 },
-    ]);
-  });
-});
-
 describe("measure viewport height locking", () => {
   function makeFakeElement(props: Record<string, any> = {}) {
     const { document } = parseHTML("<html><body></body></html>");

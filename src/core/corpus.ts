@@ -1,14 +1,15 @@
+import { RUBY_ANNOTATION_TAGS } from "./rubyText";
 import { hasParserError, parseXmlText } from "./parseXml";
 import { isElement, localNameOf, type XmlNodeLike } from "./xml";
 
 /** Versions are part of every persisted derived-data identity. */
-export const CORPUS_PARSER_VERSION = "visible-xhtml-v2";
+export const CORPUS_PARSER_VERSION = "visible-xhtml-v3";
 export const CORPUS_NORMALIZER_VERSION = "nfkc-lower-anchor-v1";
 export const BLOCK_BOUNDARY = "\u0000";
 export const MAX_ANCHOR_SNIPPET_CODE_POINTS = 32;
 
 const ANCHOR_WHITESPACE = /\p{White_Space}/u;
-const EXCLUDED_TAGS = new Set(["script", "style", "noscript", "template", "head"]);
+const EXCLUDED_TAGS = new Set(["script", "style", "noscript", "template", "head", ...RUBY_ANNOTATION_TAGS]);
 const BLOCK_TAGS = new Set([
   "address", "article", "aside", "blockquote", "body", "caption", "dd", "div", "dl",
   "dt", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",

@@ -186,7 +186,6 @@ describe("scroll mode commands", () => {
         getBoundingClientRect: () => ({ top: 0 }),
       }),
     };
-    context.buildHighlightRanges = () => [{} as Range];
     context.resolveScrollTopForRange = () => 321;
     const status = internals.navigateToSearchTarget.call(context, {
       requestId: 9,

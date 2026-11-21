@@ -10,7 +10,7 @@ import type { ResourceServer } from "../resources";
 import { TEXT_MEASURE } from "../settings";
 import type { ReaderSettings } from "../settings";
 import { hasAuthoredCssProperty } from "../cssRewrite";
-import type { ExactTextHit, RawTextRange } from "../../core/exactTextHits";
+import type { ExactTextHit } from "../../core/exactTextHits";
 import type { SearchOccurrence } from "../../core/searchOccurrence";
 import type { DisplaySearchTarget } from "../../core/search";
 import type { PersistedNavigationAnchor } from "../navigationAnchor";
@@ -332,12 +332,6 @@ export interface PendingPreciseNavigation {
   request: PreciseNavigationRequest;
   /** Immutable copy of the original request anchor; never a page-center sample. */
   anchor: ReadingAnchor | null;
-}
-
-export interface ResolvedSearchTarget {
-  canonicalHits: RawTextRange[];
-  paintIndex: VisibleTextIndex;
-  paintHits: RawTextRange[];
 }
 
 export type CaretDocument = Document & {

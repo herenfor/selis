@@ -22,6 +22,14 @@ describe("shared visible corpus", () => {
     expect(await extractSearchText(source)).toBe(`标题${BLOCK_BOUNDARY}甲乙${BLOCK_BOUNDARY}丙`);
   });
 
+  it("uses the same uninterrupted ruby base text for indexed blocks and current-book search", async () => {
+    const body = "<body><p>前<ruby>汉<rt>hàn</rt><rb>字</rb><rp>（</rp><rtc><rt>zì</rt></rtc><rp>）</rp></ruby>后</p><p>下一句</p></body>";
+    const document = await parseXmlText(body, "application/xml");
+    const blocks = extractVisibleCorpus(document);
+    expect(blocks.map(block => block.originalText)).toEqual(["前汉字后", "下一句"]);
+    expect(await extractSearchText(body)).toBe(blocks.map(block => block.originalText).join(BLOCK_BOUNDARY));
+  });
+
   it("can retain explicit footnotes without changing the search default", async () => {
     const document = await parseXmlText("<body><p>正文</p><aside epub:type='footnote'>注释</aside></body>", "application/xml");
     expect(extractVisibleCorpus(document).map((block) => block.contentType)).toEqual(["paragraph"]);

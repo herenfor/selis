@@ -46,16 +46,16 @@ export interface TextNodeProjectionSource {
   projectionForNode(node: Text): NodeProjection | undefined;
 }
 
-interface IndexedTextNode {
-  node: Text;
-  start: number;
-  end: number;
+export interface IndexedTextNode {
+  readonly node: Text;
+  readonly start: number;
+  readonly end: number;
   /** UTF-16 offset for each normalized Unicode code point. */
-  rawStarts: number[];
-  rawEnds: number[];
-  rawEnd: number;
+  readonly rawStarts: readonly number[];
+  readonly rawEnds: readonly number[];
+  readonly rawEnd: number;
   /** Present only when the DOM node currently carries a projected display string. */
-  projection?: NodeProjection;
+  readonly projection?: NodeProjection;
 }
 
 const WHITESPACE = /\p{White_Space}/u;
@@ -198,7 +198,7 @@ export class VisibleTextIndex {
   readonly codePoints: string[];
   readonly totalChars: number;
   readonly mediaUnits: number;
-  private readonly nodes: IndexedTextNode[];
+  readonly nodes: readonly IndexedTextNode[];
   private readonly sourceTextNodes: readonly Text[];
   private readonly nodeMap: Map<Text, IndexedTextNode>;
   private readonly elementIndexMap: Map<Element, number>;

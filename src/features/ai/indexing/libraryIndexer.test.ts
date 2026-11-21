@@ -237,7 +237,7 @@ describe("library index orchestration", () => {
   it("compares all derived-data versions", () => {
     expect(indexStatusIsCurrent(undefined)).toBe(false);
     expect(indexStatusIsCurrent({
-      contentHash: hash, parserVersion: "old", normalizerVersion: CORPUS_NORMALIZER_VERSION,
+      contentHash: hash, parserVersion: "visible-xhtml-v2", normalizerVersion: CORPUS_NORMALIZER_VERSION,
       chunkerVersion: CORPUS_CHUNKER_VERSION, chunkCount: 1, updatedAt: 1,
     })).toBe(false);
   });
