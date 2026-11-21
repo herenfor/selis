@@ -13,6 +13,15 @@ import { highlightColorProps } from "./highlightModel";
 import "./highlightMenu.css";
 import { NOTE_UNDO_MS } from "./pendingNoteDelete";
 import { currentUiLocale, uiText, useUiText } from "./localization/UiLanguageProvider";
+import {
+  DOCK_DEFAULT_WIDTH,
+  DOCK_MAX_WIDTH,
+  DOCK_MIN_WIDTH,
+  clampDockWidth,
+  dockCollapseArmed,
+  dockDragMax,
+  rubberbandDockWidth,
+} from "./sidebarDock";
 
 export type SidebarTab = "toc" | "bookmarks" | "notes";
 export type SidebarMode = "overlay" | "docked";
@@ -40,6 +49,16 @@ export interface SidebarDrawerProps {
   onPrepared?: () => void;
   /** While warm: draw once, practically invisible (panelPaintWarmup). */
   paintWarm?: boolean;
+  /** A narrow window temporarily hid the docked drawer; it stays mounted off-screen. */
+  autoCollapsed?: boolean;
+  /** Show the inner-edge resize handle (wide desktop, docked and visible). */
+  resizable?: boolean;
+  dockWidth?: number;
+  onResizeStart?: () => void;
+  onResizePreview?: (width: number) => void;
+  onResizeEnd?: (width: number, collapse: boolean) => void;
+  onResizeCancel?: () => void;
+  onResetWidth?: () => void;
 
   // 目录数据
   toc: TocNode[];
@@ -88,6 +107,14 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   warm = false,
   onPrepared,
   paintWarm = false,
+  autoCollapsed = false,
+  resizable = false,
+  dockWidth = DOCK_DEFAULT_WIDTH,
+  onResizeStart,
+  onResizePreview,
+  onResizeEnd,
+  onResizeCancel,
+  onResetWidth,
   toc,
   activeHref,
   onNavigateToc,
@@ -111,6 +138,171 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   const { isClosing, requestClose, cancelClose } = useMenuClose(onClose, open);
   // 浮层模式打开时焦点进入抽屉；停靠模式是阅读的一部分，不抢焦点。
   const drawerRef = useRef<HTMLElement>(null);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startWidth: number;
+    startPointer: number;
+    lastRaw: number;
+  } | null>(null);
+  const keyboardResizeRef = useRef<{
+    startWidth: number;
+    targetWidth: number;
+    timer: number | undefined;
+  } | null>(null);
+
+  /** Width-space pointer coordinate: left dock grows to the right, right dock to the left. */
+  const dockPointer = (clientX: number): number =>
+    side === "left" ? clientX : window.innerWidth - clientX;
+
+  const paintResizeValue = (rawWidth: number): void => {
+    const handle = resizeHandleRef.current;
+    if (!handle) return;
+    const legal = Math.round(clampDockWidth(rawWidth));
+    handle.setAttribute("aria-valuenow", String(legal));
+    handle.setAttribute("aria-valuetext", t("sidebar.dock.width", { width: legal }));
+    handle.dataset.armed = String(dockCollapseArmed(rawWidth));
+  };
+
+  const commitKeyboardResize = (): void => {
+    const session = keyboardResizeRef.current;
+    if (!session) return;
+    keyboardResizeRef.current = null;
+    if (session.timer !== undefined) window.clearTimeout(session.timer);
+    paintResizeValue(session.targetWidth);
+    onResizeEnd?.(session.targetWidth, false);
+  };
+
+  useEffect(() => () => {
+    const timer = keyboardResizeRef.current?.timer;
+    if (timer !== undefined) window.clearTimeout(timer);
+  }, []);
+
+  // The handle disappears when the window falls below the wide layout or the
+  // drawer changes mode mid-gesture. Drop the frozen state rather than leaving
+  // the page held under a pointer that no longer has an edge to drag.
+  useEffect(() => {
+    if (resizable && mode === "docked") return;
+    if (!dragRef.current && !keyboardResizeRef.current) return;
+    dragRef.current = null;
+    const timer = keyboardResizeRef.current?.timer;
+    if (timer !== undefined) window.clearTimeout(timer);
+    keyboardResizeRef.current = null;
+    onResizeCancel?.();
+  }, [resizable, mode, onResizeCancel]);
+
+  const beginResize = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (!resizable || mode !== "docked" || event.button !== 0 || dragRef.current) return;
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    // A pointer grab takes ownership from any pending keyboard nudge.
+    if (keyboardResizeRef.current) {
+      if (keyboardResizeRef.current.timer !== undefined) window.clearTimeout(keyboardResizeRef.current.timer);
+      keyboardResizeRef.current = null;
+    }
+    event.preventDefault();
+    const startWidth = drawer.getBoundingClientRect().width;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startWidth,
+      startPointer: dockPointer(event.clientX),
+      lastRaw: startWidth,
+    };
+    event.currentTarget.dataset.dragging = "true";
+    event.currentTarget.dataset.armed = "false";
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onResizeStart?.();
+  };
+
+  const moveResize = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const raw = drag.startWidth + dockPointer(event.clientX) - drag.startPointer;
+    drag.lastRaw = raw;
+    const max = dockDragMax(window.innerWidth);
+    onResizePreview?.(rubberbandDockWidth(raw, max));
+    paintResizeValue(raw);
+  };
+
+  const endResize = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    event.currentTarget.dataset.dragging = "false";
+    event.currentTarget.dataset.armed = "false";
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (dockCollapseArmed(drag.lastRaw)) {
+      onResizeEnd?.(dockWidth, true);
+    } else {
+      const finalWidth = clampDockWidth(drag.lastRaw);
+      paintResizeValue(finalWidth);
+      onResizeEnd?.(finalWidth, false);
+    }
+  };
+
+  const cancelResize = (event?: React.PointerEvent<HTMLDivElement>): void => {
+    dragRef.current = null;
+    if (event) {
+      event.currentTarget.dataset.dragging = "false";
+      event.currentTarget.dataset.armed = "false";
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    }
+    paintResizeValue(dockWidth);
+    onResizeCancel?.();
+  };
+
+  const handleResizeKey = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!resizable || mode !== "docked") return;
+    const key = event.key;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(key)) return;
+    event.preventDefault();
+    if (key === "Escape") {
+      const session = keyboardResizeRef.current;
+      if (session) {
+        keyboardResizeRef.current = null;
+        if (session.timer !== undefined) window.clearTimeout(session.timer);
+        paintResizeValue(dockWidth);
+        onResizeCancel?.();
+      }
+      return;
+    }
+    const current = keyboardResizeRef.current?.targetWidth
+      ?? drawerRef.current?.getBoundingClientRect().width
+      ?? dockWidth;
+    if (!keyboardResizeRef.current) {
+      onResizeStart?.();
+      keyboardResizeRef.current = { startWidth: current, targetWidth: current, timer: undefined };
+    }
+    const session = keyboardResizeRef.current;
+    if (!session) return;
+    const max = dockDragMax(window.innerWidth);
+    const step = event.shiftKey ? 48 : 16;
+    let next = current;
+    if (key === "Home") next = DOCK_MIN_WIDTH;
+    else if (key === "End") next = max;
+    else if (key === "ArrowRight") next = current + (side === "left" ? step : -step);
+    else if (key === "ArrowLeft") next = current - (side === "left" ? step : -step);
+    session.targetWidth = clampDockWidth(next);
+    onResizePreview?.(session.targetWidth);
+    paintResizeValue(session.targetWidth);
+    if (session.timer !== undefined) window.clearTimeout(session.timer);
+    session.timer = window.setTimeout(commitKeyboardResize, 600);
+  };
+
+  const resetResize = (): void => {
+    if (keyboardResizeRef.current) {
+      if (keyboardResizeRef.current.timer !== undefined) window.clearTimeout(keyboardResizeRef.current.timer);
+      keyboardResizeRef.current = null;
+    }
+    paintResizeValue(DOCK_DEFAULT_WIDTH);
+    onResizeCancel?.();
+    onResetWidth?.();
+  };
+
   useEffect(() => {
     const drawer = drawerRef.current;
     if (open && mode === "overlay" && drawer && !drawer.contains(document.activeElement)) {
@@ -242,7 +434,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
       <aside
         ref={drawerRef}
         tabIndex={-1}
-        className={`sidebar-drawer ${mode === "docked" ? "is-docked" : "is-overlay"} side-${side}${compact ? " is-compact" : ""}${open ? " is-open" : " is-closed"}${isClosing ? " is-closing" : ""}${visible ? "" : " is-warm"}${!visible && paintWarm ? " is-paint-warm" : ""}`}
+        className={`sidebar-drawer ${mode === "docked" ? "is-docked" : "is-overlay"} side-${side}${compact ? " is-compact" : ""}${open ? " is-open" : " is-closed"}${isClosing ? " is-closing" : ""}${visible ? "" : " is-warm"}${!visible && paintWarm ? " is-paint-warm" : ""}${autoCollapsed ? " is-auto-collapsed" : ""}`}
         role="region"
         aria-label={t("sidebar.drawer")}
         aria-hidden={visible ? undefined : true}
@@ -551,6 +743,36 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             </div>
           </div>
         </div>
+        {resizable && mode === "docked" && (
+          <div
+            ref={resizeHandleRef}
+            className="sidebar-dock-resize"
+            role="separator"
+            tabIndex={0}
+            aria-label={t("sidebar.dock.resize")}
+            aria-orientation="vertical"
+            aria-valuemin={DOCK_MIN_WIDTH}
+            aria-valuemax={DOCK_MAX_WIDTH}
+            aria-valuenow={Math.round(clampDockWidth(dockWidth))}
+            aria-valuetext={t("sidebar.dock.width", { width: Math.round(clampDockWidth(dockWidth)) })}
+            title={t("sidebar.dock.resize")}
+            data-armed="false"
+            data-dragging="false"
+            onPointerDown={beginResize}
+            onPointerMove={moveResize}
+            onPointerUp={endResize}
+            onPointerCancel={cancelResize}
+            onLostPointerCapture={(event) => {
+              if (dragRef.current?.pointerId === event.pointerId) cancelResize();
+            }}
+            onKeyDown={handleResizeKey}
+            onBlur={commitKeyboardResize}
+            onDoubleClick={resetResize}
+          >
+            <span className="sidebar-dock-resize-grip" aria-hidden="true" />
+            <span className="sidebar-dock-resize-hint" aria-hidden="true">{t("sidebar.dock.resize.release")}</span>
+          </div>
+        )}
       </aside>
     </>
   );

@@ -27,7 +27,10 @@ const selection: SelectionContextPayload = {
 };
 const footnote: FootnotePayload = { text: "note", rect: selection.rect, pinned: true };
 
-type Options = { bookKey: string; phone: boolean; mobile: boolean; view: "shelf" | "reader"; unrelated: number };
+type Options = {
+  bookKey: string; phone: boolean; mobile: boolean; view: "shelf" | "reader"; unrelated: number;
+  viewportWidth: number; effectiveColumns: 1 | 2; readingMode: "paginated" | "scroll"; fixedLayout: boolean;
+};
 function setup() {
   const dom = createReactDomHarness();
   const calls: string[] = [];
@@ -48,13 +51,20 @@ function setup() {
     const sidebar = useReaderSidebar({
       foreground, foregroundRef, setForeground, view: props.view,
       canDock: !props.phone, mobileChrome: props.mobile, sidebarBookKey: props.bookKey,
+      viewportWidth: props.viewportWidth,
+      effectiveColumns: props.effectiveColumns,
+      readingMode: props.readingMode,
+      fixedLayout: props.fixedLayout,
       openPanel: commands.openPanel, closeForeground: commands.closeForeground,
       requestCloseForeground: commands.requestCloseForeground,
     });
     api = { foreground, commands, sidebar, surfaces: readerForegroundSurfaces(foreground) };
     return createElement("div", { "data-kind": foreground.kind }, props.unrelated);
   }
-  let options: Options = { bookKey: "book-a", phone: false, mobile: false, view: "reader", unrelated: 0 };
+  let options: Options = {
+    bookKey: "book-a", phone: false, mobile: false, view: "reader", unrelated: 0,
+    viewportWidth: 1024, effectiveColumns: 2, readingMode: "paginated", fixedLayout: false,
+  };
   return {
     dom, calls, overlayHoverRef, dirty, readerRef, current: () => api,
     async render(patch: Partial<Options> = {}) {
@@ -170,6 +180,86 @@ describe("reader foreground host extraction", () => {
       expect(t.current().sidebar.isDockedSearch).toBe(false);
       await t.render({ view: "shelf" });
       expect(t.current().sidebar.isSidebarOpen).toBe(false);
+    } finally { await t.dom.dispose(); }
+  });
+
+  it("collapses a docked sidebar only after a single-page layout and restores with hysteresis", async () => {
+    const t = setup();
+    try {
+      await t.render();
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(true);
+
+      // 820 is the default T+S boundary: 819 requests a collapse, but the
+      // drawer waits for the forced single-page state before sliding out.
+      await t.render({ viewportWidth: 819 });
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+      expect(t.current().sidebar.singlePageLock).toBe(true);
+      expect(t.current().sidebar.isSidebarOpen).toBe(true);
+
+      await t.render({ effectiveColumns: 1 });
+      expect(t.current().sidebar.autoCollapsed).toBe(true);
+      expect(t.current().sidebar.isDockedSidebar).toBe(true);
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(false);
+      expect(t.current().sidebar.isSidebarOpen).toBe(false);
+      expect(t.current().sidebar.singlePageLock).toBe(true);
+
+      // The restore threshold is 868; 867 must not cause an oscillation.
+      await t.render({ viewportWidth: 867 });
+      expect(t.current().sidebar.autoCollapsed).toBe(true);
+      await t.render({ viewportWidth: 868 });
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+      expect(t.current().sidebar.singlePageLock).toBe(true);
+
+      await t.dom.run(() => t.current().sidebar.finishDockRestore());
+      expect(t.current().sidebar.singlePageLock).toBe(false);
+    } finally { await t.dom.dispose(); }
+  });
+
+  it("keeps a user width preference and turns a manual narrow recall into overlay", async () => {
+    const t = setup();
+    try {
+      await t.render();
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      await t.dom.run(() => t.current().sidebar.setSidebarWidth(999));
+      expect(t.current().sidebar.sidebarWidth).toBe(480);
+      await t.dom.run(() => t.current().sidebar.setSidebarWidth(300));
+      expect(t.current().sidebar.sidebarWidth).toBe(300);
+
+      await t.render({ viewportWidth: 799, effectiveColumns: 1 });
+      expect(t.current().sidebar.autoCollapsed).toBe(true);
+      await t.dom.run(() => t.current().sidebar.handleToggleSidebar("left"));
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+      expect(t.current().sidebar.isDockedSidebar).toBe(false);
+      expect(t.current().sidebar.isSidebarOpen).toBe(true);
+      expect(t.current().foreground).toEqual({ kind: "panel", panel: "toc" });
+    } finally { await t.dom.dispose(); }
+  });
+
+  it("respects an explicit pin in a narrow window until the window changes", async () => {
+    const t = setup();
+    try {
+      await t.render({ viewportWidth: 800, effectiveColumns: 1 });
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(true);
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+
+      // A width change releases the explicit-pin guard; 900 is still legal.
+      await t.render({ viewportWidth: 900, effectiveColumns: 1 });
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+      // A subsequent narrow width now auto-collapses.
+      await t.render({ viewportWidth: 810, effectiveColumns: 1 });
+      expect(t.current().sidebar.autoCollapsed).toBe(true);
+    } finally { await t.dom.dispose(); }
+  });
+
+  it("collapses immediately for scroll/fixed layouts without waiting for columns", async () => {
+    const t = setup();
+    try {
+      await t.render();
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      await t.render({ viewportWidth: 700, readingMode: "scroll" });
+      expect(t.current().sidebar.autoCollapsed).toBe(true);
     } finally { await t.dom.dispose(); }
   });
 });

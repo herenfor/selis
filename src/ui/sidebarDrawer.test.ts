@@ -224,6 +224,25 @@ describe("Zen UI SidebarDrawer 组件与交互契约（Packet B）", () => {
     expect(html).toContain("sidebar-pane sidebar-notes-pane scrollbar-hidden");
   });
 
+  it("宽屏停靠时提供可访问的宽度拖拽手柄，自动收起保留离场类", () => {
+    const resizable = renderToStaticMarkup(createElement(SidebarDrawer, {
+      ...baseProps, mode: "docked", resizable: true, dockWidth: 360,
+    }));
+    expect(resizable).toContain("sidebar-dock-resize");
+    expect(resizable).toContain('role="separator"');
+    expect(resizable).toContain('aria-orientation="vertical"');
+    expect(resizable).toContain('aria-valuemin="280"');
+    expect(resizable).toContain('aria-valuemax="480"');
+    expect(resizable).toContain('aria-valuenow="360"');
+    expect(resizable).toContain("sidebar-dock-resize-hint");
+
+    const collapsed = renderToStaticMarkup(createElement(SidebarDrawer, {
+      ...baseProps, open: false, mode: "docked", autoCollapsed: true,
+    }));
+    expect(collapsed).toContain("is-auto-collapsed");
+    expect(collapsed).toContain("is-docked");
+  });
+
   it("固定模式将遮罩切为不拦截输入的驻留态，图钉同步标记按下", () => {
     const html = renderToStaticMarkup(
       createElement(SidebarDrawer, { ...baseProps, mode: "docked" })

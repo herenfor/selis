@@ -6,6 +6,9 @@ import "./sidebarDockViewport.css";
 
 interface Props {
   dockedSide: "left" | "right" | null;
+  /** A pointer drag owns the page size until the drag ends. */
+  resizing?: boolean;
+  onDockSettled?: () => void;
   children: ReactNode;
 }
 
@@ -22,14 +25,33 @@ class SidebarDockViewport extends Component<Props, object, PageSize | null> {
 
   getSnapshotBeforeUpdate(previous: Props): PageSize | null {
     const page = this.page.current;
-    if (previous.dockedSide === this.props.dockedSide || !page) return null;
+    if (!page) return null;
+    if (previous.dockedSide === this.props.dockedSide && previous.resizing === this.props.resizing) return null;
     const style = getComputedStyle(page);
     return { width: style.width, height: style.height };
   }
 
-  componentDidUpdate(_previous: Props, _state: object, size: PageSize | null) {
+  componentDidUpdate(previous: Props, _state: object, size: PageSize | null) {
     const page = this.page.current;
-    if (!page || !size) return;
+    if (!page) return;
+    // A drag freezes the page at its starting size; pointer moves only change
+    // the surrounding CSS width, so no update reaches the paginator.
+    if (this.props.resizing) {
+      if (!size) return;
+      this.pending = size;
+      page.style.width = size.width;
+      page.style.height = size.height;
+      return;
+    }
+    if (previous.resizing && !this.props.resizing && previous.dockedSide === this.props.dockedSide) {
+      this.pending = null;
+      page.style.removeProperty("width");
+      page.style.removeProperty("height");
+      notifyDockSizeSettled(page);
+      this.props.onDockSettled?.();
+      return;
+    }
+    if (!size) return;
     this.pending = size;
     const transitions = page.closest(".main")?.getAnimations?.().filter(animation =>
       "transitionProperty" in animation &&
@@ -43,6 +65,7 @@ class SidebarDockViewport extends Component<Props, object, PageSize | null> {
       page.style.removeProperty("width");
       page.style.removeProperty("height");
       notifyDockSizeSettled(page);
+      this.props.onDockSettled?.();
     };
     if (!transitions.length) {
       release();
@@ -65,11 +88,11 @@ class SidebarDockViewport extends Component<Props, object, PageSize | null> {
 }
 
 /** Keep the book renderer mounted when its sidebar changes presentation. */
-export const SourceReaderView = forwardRef<ReaderHandle, ReaderViewProps & Pick<Props, "dockedSide">>(
-  function SourceReaderView({ dockedSide, ...props }, ref) {
-    const Reader = props.book.sourceFormat === "comic-zip" ? ComicReaderView : ReaderView;
-    return <SidebarDockViewport dockedSide={dockedSide}>
-      <Reader ref={ref} {...props} />
-    </SidebarDockViewport>;
-  },
-);
+export const SourceReaderView = forwardRef<ReaderHandle,
+  ReaderViewProps & Pick<Props, "dockedSide" | "resizing" | "onDockSettled">
+>(function SourceReaderView({ dockedSide, resizing = false, onDockSettled, ...props }, ref) {
+  const Reader = props.book.sourceFormat === "comic-zip" ? ComicReaderView : ReaderView;
+  return <SidebarDockViewport dockedSide={dockedSide} resizing={resizing} onDockSettled={onDockSettled}>
+    <Reader ref={ref} {...props} />
+  </SidebarDockViewport>;
+});

@@ -56,6 +56,7 @@ import { useReaderShortcuts } from "./ui/useReaderShortcuts";
 import { useShelfExitBack } from "./ui/useShelfExitBack";
 import { useSaveFileFlows } from "./ui/useSaveFileFlows";
 import { useResponsiveEnvironment } from "./ui/responsiveEnvironment";
+import { DOCK_DEFAULT_WIDTH, clampDockWidth, useDebouncedWindowWidth } from "./ui/sidebarDock";
 import {
   createContentAxis,
   type AxisInput,
@@ -457,6 +458,9 @@ export default function App() {
   const { t } = useUiText();
   const runtime = getRuntimeCapabilities();
   const responsive = useResponsiveEnvironment();
+  const settledWindowWidth = useDebouncedWindowWidth(250);
+  const [dockResizing, setDockResizing] = useState(false);
+  const appRootRef = useRef<HTMLDivElement>(null);
   const mobileChrome = responsive.touchUi;
   const phoneChrome = mobileChrome && responsive.layout === "compact";
   const [phase, setPhase] = useState<AppPhase>({ phase: "idle" });
@@ -742,16 +746,68 @@ export default function App() {
   const sidebarBookKey = currentShelfId ?? book?.metadata.identifier ?? "unshelved";
   const {
     sidebarSide, sidebarNavigationMemory, effectiveSidebarMode,
-    isSidebarOpen, activeSidebarTab, isDockedSidebar, isDockedSearch,
+    isSidebarOpen, activeSidebarTab, isDockedSidebar, isDockedSidebarVisible, isDockedSearch,
+    sidebarWidth, setSidebarWidth, autoCollapsed, singlePageLock, finishDockRestore, requestDockCollapse,
     handleSidebarTabChange, handleSidebarModeChange, handleSidebarClose,
     requestCloseCurrentSurface, handleToggleSidebar, handleOpenBookmarks,
   } = useReaderSidebar({
     foreground, foregroundRef, setForeground, view, canDock: canDockSidebar, mobileChrome,
     sidebarBookKey,
+    viewportWidth: settledWindowWidth,
+    effectiveColumns: chapterState.status === "ready" ? chapterState.effectiveColumns : undefined,
+    readingMode: chapterState.status === "ready" ? (chapterState.mode ?? settings.readingMode) : settings.readingMode,
+    readingTransient: chapterState.status === "ready" && chapterState.transient === true,
+    fixedLayout: book?.fixedLayout === true,
+    resizing: dockResizing,
     openPanel, closeForeground, requestCloseForeground,
   });
   const sidebarNavigationMemoryRef = useRef(sidebarNavigationMemory);
   sidebarNavigationMemoryRef.current = sidebarNavigationMemory;
+  // The narrow-window lock is derived for the reader only: the saved preference
+  // and the Aa selection stay untouched.
+  const readerChapterSettings = useMemo(
+    () => singlePageLock && chapterSettings.columnsPerView !== 1
+      ? { ...chapterSettings, columnsPerView: 1 as const }
+      : chapterSettings,
+    [chapterSettings, singlePageLock],
+  );
+  const canResizeSidebar = isDockedSidebarVisible && canDockSidebar &&
+    responsive.layout === "wide" && !phoneChrome;
+
+  useLayoutEffect(() => {
+    appRootRef.current?.style.setProperty("--sidebar-dock-width", `${sidebarWidth}px`);
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!isDockedSidebarVisible) setDockResizing(false);
+  }, [isDockedSidebarVisible]);
+
+  const previewDockWidth = useCallback((width: number) => {
+    appRootRef.current?.style.setProperty("--sidebar-dock-width", `${width}px`);
+  }, []);
+  const handleDockResizeStart = useCallback(() => setDockResizing(true), []);
+  const handleDockResizeEnd = useCallback((width: number, collapse: boolean) => {
+    setDockResizing(false);
+    if (collapse) {
+      // The raw edge was rubber-banded below the minimum; restore the last
+      // committed preference before the drawer leaves.
+      appRootRef.current?.style.setProperty("--sidebar-dock-width", `${sidebarWidth}px`);
+      requestDockCollapse();
+      return;
+    }
+    const next = clampDockWidth(width);
+    setSidebarWidth(next);
+    appRootRef.current?.style.setProperty("--sidebar-dock-width", `${next}px`);
+  }, [requestDockCollapse, setSidebarWidth, sidebarWidth]);
+  const handleDockResizeCancel = useCallback(() => {
+    setDockResizing(false);
+    appRootRef.current?.style.setProperty("--sidebar-dock-width", `${sidebarWidth}px`);
+  }, [sidebarWidth]);
+  const handleDockResetWidth = useCallback(() => {
+    setDockResizing(false);
+    setSidebarWidth(DOCK_DEFAULT_WIDTH);
+    appRootRef.current?.style.setProperty("--sidebar-dock-width", `${DOCK_DEFAULT_WIDTH}px`);
+  }, [setSidebarWidth]);
 
   /** 关闭正文图片浮层；不改变页码/滚动位置，也不记入阅读历史。 */
   const closeImageOverlay = useCallback((): void => {
@@ -2559,8 +2615,9 @@ export default function App() {
 
   return (
     <div
+      ref={appRootRef}
       data-drop-label={dragActive ? dropLabel : undefined}
-      className={`app${dragActive ? " drag-active" : ""}${dragActive && dropFolderId ? " drag-to-folder" : ""}${isFullscreen ? " is-fullscreen" : ""}${isDockedSidebar ? ` has-docked-sidebar docked-side-${sidebarSide}` : ""}${isDockedSearch ? " has-docked-search" : ""}`}
+      className={`app${dragActive ? " drag-active" : ""}${dragActive && dropFolderId ? " drag-to-folder" : ""}${isFullscreen ? " is-fullscreen" : ""}${isDockedSidebarVisible ? ` has-docked-sidebar docked-side-${sidebarSide}` : ""}${dockResizing ? " is-dock-resizing" : ""}${isDockedSearch ? " has-docked-search" : ""}`}
       data-platform={runtime.platform}
       data-shell={runtime.shell}
       data-layout={responsive.layout}
@@ -2647,6 +2704,14 @@ export default function App() {
           onClose={handleSidebarClose}
           compact={phoneChrome}
           canDock={canDockSidebar}
+          autoCollapsed={autoCollapsed && isDockedSidebar}
+          resizable={canResizeSidebar}
+          dockWidth={sidebarWidth}
+          onResizeStart={handleDockResizeStart}
+          onResizePreview={previewDockWidth}
+          onResizeEnd={handleDockResizeEnd}
+          onResizeCancel={handleDockResizeCancel}
+          onResetWidth={handleDockResetWidth}
           warm={openingPanels.toc}
           onPrepared={() => openingPanels.prepared(bookKey, "toc")}
           paintWarm={warming("toc")}
@@ -3015,7 +3080,9 @@ export default function App() {
                   </>
                 )}
                 <SourceReaderView
-                  dockedSide={isDockedSidebar ? sidebarSide : null}
+                  dockedSide={isDockedSidebarVisible ? sidebarSide : null}
+                  resizing={dockResizing}
+                  onDockSettled={finishDockRestore}
                   key={bookKey}
                   ref={readerRef}
                   book={book!}
@@ -3023,7 +3090,7 @@ export default function App() {
                   spineIndex={spineIndex}
                   anchor={anchor}
                   anchorNonce={anchorNonce}
-                  settings={chapterSettings}
+                  settings={readerChapterSettings}
                   textProjectionPreferences={readerTextProjectionPreferences}
                   textProjection={compiledTextProjection}
                   visualPreferences={visualPreferences}

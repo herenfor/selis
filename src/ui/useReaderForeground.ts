@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { uiText } from "./localization/UiLanguageProvider";
 import { shouldConfirmNoteDiscard } from "./readerCloseGuards";
 import {
@@ -18,6 +18,7 @@ import {
 import type { ReaderHandle } from "./ReaderView";
 import type { SidebarMode, SidebarTab } from "./SidebarDrawer";
 import { createSidebarNavigationMemory, type SidebarNavigationMemory } from "./sidebarSwipe";
+import { DOCK_DEFAULT_WIDTH, clampDockWidth, resolveDockNarrowState } from "./sidebarDock";
 
 /** Kept separate from commands so App retains its state/effect ordering. */
 export function useReaderForegroundState() {
@@ -156,6 +157,15 @@ interface SidebarWiring {
   canDock: boolean;
   mobileChrome: boolean;
   sidebarBookKey: string;
+  /** Settled window width used for auto-collapse; pointer dragging reads window.innerWidth directly. */
+  viewportWidth?: number;
+  /** Current published paginator state; undefined while the chapter is loading. */
+  effectiveColumns?: 1 | 2;
+  readingMode?: "paginated" | "scroll";
+  readingTransient?: boolean;
+  fixedLayout?: boolean;
+  /** A pointer drag owns the width; never auto-collapse under the pointer. */
+  resizing?: boolean;
   openPanel(panel: ReaderPanelId): void;
   closeForeground(): void;
   requestCloseForeground(): void;
@@ -164,12 +174,22 @@ interface SidebarWiring {
 /** Sidebar preferences and per-book scroll memories remain local to this App mount. */
 export function useReaderSidebar({
   foreground, foregroundRef, setForeground, view, canDock, mobileChrome, sidebarBookKey,
+  viewportWidth = 1024, effectiveColumns, readingMode = "paginated", readingTransient = false,
+  fixedLayout = false, resizing = false,
   openPanel, closeForeground, requestCloseForeground,
 }: SidebarWiring) {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("toc");
   const [sidebarSide, setSidebarSide] = useState<"left" | "right">("left");
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("overlay");
   const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [sidebarWidth, setSidebarWidthState] = useState(DOCK_DEFAULT_WIDTH);
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
+  const [autoCollapsePending, setAutoCollapsePending] = useState(false);
+  const [restoreLock, setRestoreLock] = useState(false);
+  const [autoCollapseSuppressed, setAutoCollapseSuppressed] = useState(false);
+  const suppressedAtWidthRef = useRef(viewportWidth);
+  const [dockExiting, setDockExiting] = useState(false);
+  const dockExitTimerRef = useRef<number | undefined>(undefined);
 
   // 竖屏与紧凑窗口使用浮窗，保留固定偏好以便回到横屏时恢复。
   const sidebarNavigationMemories = useRef(new Map<string, SidebarNavigationMemory>());
@@ -180,10 +200,11 @@ export function useReaderSidebar({
   }
 
   const effectiveSidebarMode: SidebarMode = canDock ? sidebarMode : "overlay";
+  const dockWidth = clampDockWidth(sidebarWidth);
 
   const isSidebarOpen =
     view === "reader" &&
-    ((effectiveSidebarMode === "docked" && sidebarPinned) ||
+    ((effectiveSidebarMode === "docked" && sidebarPinned && !autoCollapsed) ||
       (foreground.kind === "panel" &&
         (foreground.panel === "toc" || foreground.panel === "bookmarks" || foreground.panel === "notes")));
 
@@ -197,8 +218,87 @@ export function useReaderSidebar({
   })();
 
   const isDockedSidebar = view === "reader" && effectiveSidebarMode === "docked" && sidebarPinned;
+  const isDockedSidebarVisible = isDockedSidebar && !autoCollapsed;
   // 桌面正文搜索停靠右侧时正文让出位置（宽窗由 CSS 决定），结果和正文同时可见。
   const isDockedSearch = view === "reader" && !mobileChrome && foreground.kind === "panel" && foreground.panel === "search";
+  const singlePageLock = isDockedSidebar && (autoCollapsed || autoCollapsePending || restoreLock);
+
+  const clearAutoCollapse = useCallback(() => {
+    window.clearTimeout(dockExitTimerRef.current);
+    dockExitTimerRef.current = undefined;
+    setAutoCollapsed(false);
+    setAutoCollapsePending(false);
+    setRestoreLock(false);
+    setAutoCollapseSuppressed(false);
+    setDockExiting(false);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(dockExitTimerRef.current), []);
+
+  // An explicit pin in an already-narrow window is respected until the window
+  // changes size; otherwise it would collapse again under the user's hand.
+  const suppressAutoCollapse = useCallback(() => {
+    suppressedAtWidthRef.current = viewportWidth;
+    setAutoCollapsePending(false);
+    setAutoCollapseSuppressed(true);
+  }, [viewportWidth]);
+
+  useEffect(() => {
+    if (autoCollapseSuppressed && viewportWidth !== suppressedAtWidthRef.current) {
+      setAutoCollapseSuppressed(false);
+    }
+  }, [viewportWidth, autoCollapseSuppressed]);
+
+  const setSidebarWidth = useCallback((width: number) => {
+    setSidebarWidthState(clampDockWidth(width));
+  }, []);
+
+  // Leaving the docked/reader surface abandons a temporary narrow-window state.
+  useEffect(() => {
+    if (view !== "reader" || !isDockedSidebar) clearAutoCollapse();
+  }, [view, isDockedSidebar, clearAutoCollapse]);
+
+  // A settled narrow window asks for a single-page reflow before the drawer moves.
+  useEffect(() => {
+    if (view !== "reader" || !isDockedSidebar || !canDock || resizing || autoCollapseSuppressed ||
+      autoCollapsed || autoCollapsePending || restoreLock) return;
+    if (resolveDockNarrowState({ windowWidth: viewportWidth, dockWidth, collapsed: false }) === "collapse") {
+      setAutoCollapsePending(true);
+    }
+  }, [viewportWidth, dockWidth, view, isDockedSidebar, canDock, resizing, autoCollapseSuppressed,
+    autoCollapsed, autoCollapsePending, restoreLock]);
+
+  // Wait for the forced single-page layout to be published before sliding out.
+  useEffect(() => {
+    if (!autoCollapsePending || resizing) return;
+    if (resolveDockNarrowState({ windowWidth: viewportWidth, dockWidth, collapsed: false }) !== "collapse") {
+      setAutoCollapsePending(false);
+      return;
+    }
+    const single = readingMode === "scroll" || fixedLayout || (effectiveColumns === 1 && !readingTransient);
+    if (!single) return;
+    setAutoCollapsePending(false);
+    setAutoCollapsed(true);
+    setRestoreLock(false);
+  }, [autoCollapsePending, resizing, viewportWidth, dockWidth, readingMode, fixedLayout, effectiveColumns, readingTransient]);
+
+  // Restore only from the window and preferred width, never from the released full width.
+  useEffect(() => {
+    if (view !== "reader" || !isDockedSidebar || !canDock || !autoCollapsed || dockExiting) return;
+    if (resolveDockNarrowState({ windowWidth: viewportWidth, dockWidth, collapsed: true }) === "restore") {
+      setAutoCollapsed(false);
+      setRestoreLock(true);
+    }
+  }, [viewportWidth, dockWidth, view, isDockedSidebar, canDock, autoCollapsed, dockExiting]);
+
+
+  // The dock viewport releases its frozen page after the margin transition.
+  const finishDockRestore = useCallback(() => setRestoreLock(false), []);
+  useEffect(() => {
+    if (!restoreLock) return;
+    const timer = window.setTimeout(() => setRestoreLock(false), 800);
+    return () => window.clearTimeout(timer);
+  }, [restoreLock]);
 
   const handleSidebarTabChange = useCallback((tab: SidebarTab) => {
     setSidebarTab(tab);
@@ -208,8 +308,10 @@ export function useReaderSidebar({
   }, [effectiveSidebarMode, openPanel]);
 
   const handleSidebarModeChange = useCallback((mode: SidebarMode) => {
+    clearAutoCollapse();
     setSidebarMode(mode);
     if (mode === "docked") {
+      suppressAutoCollapse();
       setSidebarTab(activeSidebarTab);
       setSidebarPinned(true);
       if (
@@ -224,14 +326,34 @@ export function useReaderSidebar({
       setSidebarPinned(false);
       openPanel(sidebarTab);
     }
-  }, [activeSidebarTab, sidebarTab, openPanel, closeForeground, foregroundRef]);
+  }, [activeSidebarTab, sidebarTab, openPanel, closeForeground, foregroundRef, clearAutoCollapse, suppressAutoCollapse]);
 
   const handleSidebarClose = useCallback(() => {
+    clearAutoCollapse();
     if (canDock && sidebarMode === "docked") {
       setSidebarPinned(false);
     }
     closeForeground();
-  }, [closeForeground, canDock, sidebarMode]);
+  }, [closeForeground, canDock, sidebarMode, clearAutoCollapse]);
+
+  /** A drag past the arm line slides the dock out, then releases the pin. */
+  const requestDockCollapse = useCallback(() => {
+    if (!isDockedSidebar) {
+      handleSidebarClose();
+      return;
+    }
+    window.clearTimeout(dockExitTimerRef.current);
+    setAutoCollapsePending(false);
+    setAutoCollapsed(true);
+    setDockExiting(true);
+    dockExitTimerRef.current = window.setTimeout(() => {
+      dockExitTimerRef.current = undefined;
+      setDockExiting(false);
+      setSidebarPinned(false);
+      setAutoCollapsed(false);
+      closeForeground();
+    }, 320);
+  }, [isDockedSidebar, handleSidebarClose, closeForeground]);
 
   /** 键盘/返回键关闭当前可见层；模态（笔记、分享）先关，笔记先走统一 dirty 确认。 */
   const requestCloseCurrentSurface = useCallback((): void => {
@@ -255,31 +377,55 @@ export function useReaderSidebar({
 
   const handleToggleSidebar = useCallback((side?: "left" | "right") => {
     const targetSide = side || "left";
+    // A manual recall while the dock is auto-collapsed opens the overlay, so it
+    // never occupies the text column that the narrow window cannot afford.
+    if (autoCollapsed) {
+      clearAutoCollapse();
+      setSidebarSide(targetSide);
+      setSidebarPinned(false);
+      setSidebarMode("overlay");
+      openPanel(sidebarTab);
+      return;
+    }
     if (isSidebarOpen && sidebarSide === targetSide) {
       handleSidebarClose();
     } else {
       setSidebarSide(targetSide);
       if (effectiveSidebarMode === "docked") {
+        suppressAutoCollapse();
         setSidebarPinned(true);
       } else {
         openPanel(sidebarTab);
       }
     }
-  }, [isSidebarOpen, sidebarSide, handleSidebarClose, effectiveSidebarMode, sidebarTab, openPanel]);
+  }, [autoCollapsed, clearAutoCollapse, isSidebarOpen, sidebarSide, handleSidebarClose, effectiveSidebarMode,
+    sidebarTab, openPanel, suppressAutoCollapse]);
 
   const handleOpenBookmarks = useCallback(() => {
+    if (autoCollapsed) {
+      clearAutoCollapse();
+      setSidebarSide("right");
+      setSidebarTab("bookmarks");
+      setSidebarPinned(false);
+      setSidebarMode("overlay");
+      openPanel("bookmarks");
+      return;
+    }
     setSidebarSide("right");
     setSidebarTab("bookmarks");
     if (effectiveSidebarMode === "docked") {
+      suppressAutoCollapse();
       setSidebarPinned(true);
     } else {
       openPanel("bookmarks");
     }
-  }, [effectiveSidebarMode, openPanel]);
+  }, [autoCollapsed, clearAutoCollapse, effectiveSidebarMode, openPanel, suppressAutoCollapse]);
 
   return {
     sidebarSide, sidebarNavigationMemory, effectiveSidebarMode,
-    isSidebarOpen, activeSidebarTab, isDockedSidebar, isDockedSearch,
+    isSidebarOpen, activeSidebarTab, isDockedSidebar, isDockedSidebarVisible, isDockedSearch,
+    sidebarWidth: dockWidth, setSidebarWidth, autoCollapsed, singlePageLock,
+    finishDockRestore, requestDockCollapse,
     handleSidebarTabChange, handleSidebarModeChange, handleSidebarClose,
     requestCloseCurrentSurface, handleToggleSidebar, handleOpenBookmarks,
   };
