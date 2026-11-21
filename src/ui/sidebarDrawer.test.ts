@@ -215,6 +215,15 @@ describe("Zen UI SidebarDrawer 组件与交互契约（Packet B）", () => {
     expect(shared).toContain("分享");
   });
 
+  it("三个页签都隐藏滚动条但保留可滚动容器", () => {
+    const html = renderToStaticMarkup(
+      createElement(SidebarDrawer, { ...baseProps })
+    );
+    expect(html).toContain("sidebar-pane sidebar-toc-pane scrollbar-hidden");
+    expect(html).toContain("sidebar-pane sidebar-bookmarks-pane scrollbar-hidden");
+    expect(html).toContain("sidebar-pane sidebar-notes-pane scrollbar-hidden");
+  });
+
   it("固定模式将遮罩切为不拦截输入的驻留态，图钉同步标记按下", () => {
     const html = renderToStaticMarkup(
       createElement(SidebarDrawer, { ...baseProps, mode: "docked" })

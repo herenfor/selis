@@ -143,28 +143,28 @@
   bottom: 0;
   z-index: var(--z-ui-docked);
   width: 320px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.08);
+  box-shadow: none;
 }
 
+/* The docked column meets the page with square corners. Keep a border on all
+   four sides (transparent outside, one hairline on the page side) because the
+   overlay already has one: changing border-width during a pin would shift the
+   content sideways. */
 .sidebar-drawer.is-docked.side-left {
   left: 0;
   right: auto;
-  border-right: var(--hairline) solid var(--panel-border);
-  border-left: none;
-  border-top: none;
-  border-bottom: none;
-  border-radius: 0 var(--r-lg) var(--r-lg) 0;
+  border: var(--hairline) solid transparent;
+  border-right-color: var(--panel-border);
+  border-radius: 0;
   animation: var(--sheet-enter);
 }
 
 .sidebar-drawer.is-docked.side-right {
   right: 0;
   left: auto;
-  border-left: var(--hairline) solid var(--panel-border);
-  border-right: none;
-  border-top: none;
-  border-bottom: none;
-  border-radius: var(--r-lg) 0 0 var(--r-lg);
+  border: var(--hairline) solid transparent;
+  border-left-color: var(--panel-border);
+  border-radius: 0;
   animation: var(--sheet-enter);
 }
 
@@ -183,6 +183,7 @@
     right var(--ui-dock) var(--ease-emphasized),
     width var(--ui-dock) var(--ease-emphasized),
     border-radius var(--ui-dock) var(--ease-emphasized),
+    border-color var(--ui-dock) var(--ease-emphasized),
     box-shadow var(--ui-dock) var(--ease-emphasized);
 }
 
@@ -284,15 +285,6 @@
   touch-action: pan-y pinch-zoom;
 }
 
-.sidebar-pane::-webkit-scrollbar {
-  width: 5px;
-}
-
-.sidebar-pane::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--fg) 18%, transparent);
-  border-radius: var(--r-xs);
-}
-
 .sidebar-track {
   display: flex;
   height: 100%;
@@ -311,6 +303,14 @@
   overflow-x: hidden;
   overscroll-behavior: none;
   padding: 8px 0;
+  /* The top/bottom edge fade is the only "more content" hint; the 5px
+     scrollbar used to sit on top of it. Keep wheel, touch and keyboard
+     scrolling. */
+  scrollbar-width: none;
+}
+
+.sidebar-pane::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-pane > * { flex-shrink: 0; }
