@@ -494,6 +494,11 @@ export default function App() {
     dispatchRestoreGate, restoreResultMatches, startRestore, clearRestore,
   } = useReaderSession(() => activeSessionRef.current?.generation);
   const { settings, setSettings, uiScale, settingsActions } = useReaderSettings();
+  const chapterSettings = useMemo(() => {
+    // Chapter cache keys include serialized settings. Keep popover preferences outside them.
+    const { footnoteFontSource, footnoteFontName, footnoteFontId, ...chapter } = settings;
+    return chapter;
+  }, [settings]);
   const [runtimeIssues, setRuntimeIssues] = useState<string[]>([]);
   const [diagText, setDiagText] = useState<string | null>(null);
   const [initialAnchor, setInitialAnchor] = useState<PersistedReaderAnchor | null>(null);
@@ -1048,6 +1053,7 @@ export default function App() {
     handleImportFontPaths,
     handleDeleteFont,
     renderUserFonts,
+    footnoteFontUrl,
     loadSystemFonts,
   } = useFontLibrary({ settings, setSettings, settingsActions, setShelfNotice });
 
@@ -1755,7 +1761,8 @@ export default function App() {
           const overFontPanel = isOverFontPanel(p.position);
           const dropped = partitionDroppedPaths(p.paths);
           if (overFontPanel) {
-            void handleImportFontPaths(p.paths);
+            const role = document.querySelector<HTMLElement>(".font-settings-panel")?.dataset.fontRole;
+            void handleImportFontPaths(p.paths, role === "footnote" || role === "heading" ? role : "body");
             if (dropped.books.length > 0) {
               setShelfNotice({ kind: "error", text: uiText("notice.font.dropUnsupported") });
             }
@@ -2854,6 +2861,12 @@ export default function App() {
                   headingFontId={settings.headingFontId}
                   headingFontName={settings.headingFontName}
                   onSplitHeadingFontChange={settingsActions.setSplitHeadingFont}
+                  footnoteFontSource={settings.footnoteFontSource}
+                  footnoteFontId={settings.footnoteFontId}
+                  footnoteFontName={settings.footnoteFontName}
+                  onSelectFootnoteSystem={settingsActions.selectSystemFootnoteFont}
+                  onSelectFootnoteImported={settingsActions.selectImportedFootnoteFont}
+                  onSelectFootnoteBook={settingsActions.selectFootnoteBookFont}
                   onSelectHeadingSystem={settingsActions.selectSystemHeadingFont}
                   onSelectHeadingBook={settingsActions.selectHeadingBookFont}
                   onSelectHeadingImported={settingsActions.selectImportedHeadingFont}
@@ -3010,7 +3023,7 @@ export default function App() {
                   spineIndex={spineIndex}
                   anchor={anchor}
                   anchorNonce={anchorNonce}
-                  settings={settings}
+                  settings={chapterSettings}
                   textProjectionPreferences={readerTextProjectionPreferences}
                   textProjection={compiledTextProjection}
                   visualPreferences={visualPreferences}
@@ -3230,6 +3243,11 @@ export default function App() {
           <FootnotePop
             text={footnote.text}
             html={footnote.html}
+            fontFaceCss={footnote.fontFaceCss}
+            fontSizePx={settings.fontSizePx}
+            fontSource={settings.footnoteFontSource}
+            fontName={settings.footnoteFontName}
+            importedFontUrl={footnoteFontUrl}
             pinned={footnote.pinned}
             rect={footnote.rect}
             onClose={handleFootnoteClose}

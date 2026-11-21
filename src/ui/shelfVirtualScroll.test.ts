@@ -119,6 +119,7 @@ describe("virtual list geometry stays stable", () => {
       await dom.render(createElement(FontSettingsPanel, {
         systemFonts: Array.from({ length: 100 }, (_, i) => ({ family: `Font-${i}`, localizedNames: [] })),
         userFonts: [], busy: false, systemFontsStatus: "ready",
+        onSelectFootnoteSystem() {}, onSelectFootnoteBook() {}, onSelectFootnoteImported() {},
         onSelectSystem() {}, onSelectBook() {}, onSelectImported() {}, onDelete() {}, onImport() {}, onClose() {},
       }));
       const scroller = dom.container.querySelector<HTMLElement>(".font-settings-scroll")!;

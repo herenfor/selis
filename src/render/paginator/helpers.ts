@@ -115,7 +115,9 @@ export function isChapterMeasurementCurrent(token: ChapterMeasurementToken): boo
 }
 
 /** 脚注弹层数据（由分页器发往 UI 层）。 */
-export interface FootnotePayload {  text: string;
+export interface FootnotePayload {
+  text: string;
+  fontFaceCss?: string;
   /** 图片注释/富文本注释的 HTML；无则为 undefined */
   html?: string;
   /** 标记在 iframe 内视口的矩形 */

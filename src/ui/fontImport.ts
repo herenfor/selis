@@ -1,3 +1,4 @@
+import type { FontRole } from "../render/settings";
 import { fontFamilyFromFileName, type FontStore, type UserFont } from "./fontStore";
 import { partitionFontItems, runFontImportBatch } from "./fontDrop";
 import { uiPlural, uiText } from "./localization/UiLanguageProvider";
@@ -10,7 +11,7 @@ export type FontImportResult =
 
 export interface FontImportController {
   /** 本地文件入口：逐文件哈希并写入当前适配器。 */
-  importFiles(files: readonly File[]): Promise<FontImportResult>;
+  importFiles(files: readonly File[], role?: FontRole): Promise<FontImportResult>;
   /** 原生路径入口：一次 `fonts_import_paths` 调用导入整批，不重入 busy。 */
   importPaths(paths: readonly string[]): Promise<FontImportResult>;
 }
@@ -18,7 +19,7 @@ export interface FontImportController {
 export interface FontImportControllerOptions {
   store: () => FontStore;
   /** 单文件落库（哈希、写 store、更新选中字体），由调用方注入以免重复实现。 */
-  importFile: (file: File) => Promise<void>;
+  importFile: (file: File, role: FontRole) => Promise<void>;
   onBusyChange: (busy: boolean) => void;
 }
 
@@ -50,11 +51,11 @@ export function createFontImportController(options: FontImportControllerOptions)
     return { kind: "ok", imported, unsupported: unsupported.length, message: describe(supported, imported) };
   };
 
-  const importFiles = (files: readonly File[]): Promise<FontImportResult> =>
+  const importFiles = (files: readonly File[], role: FontRole = "body"): Promise<FontImportResult> =>
     runBatch(
       files,
       (file) => file.name,
-      async (file) => { await options.importFile(file); },
+      async (file) => { await options.importFile(file, role); },
       (supported, imported) => {
         if (imported === 0) return undefined;
         if (imported === 1 && supported.length === 1) return uiText("notice.font.importedOne", { family: fontFamilyFromFileName(supported[0].name) });

@@ -11,6 +11,8 @@ export type BuiltinTheme = "light" | "dark" | "sepia" | "gray";
 /** A built-in theme, or a user theme carried as its colors (config/customThemes). */
 export type Theme = BuiltinTheme | CustomThemeKey;
 
+export type FontRole = "body" | "heading" | "footnote";
+
 export interface ReaderSettings {
   fontSizePx: number;
   theme: Theme;
@@ -29,6 +31,10 @@ export interface ReaderSettings {
   headingFontSource?: "system" | "imported";
   /** headingFontSource=imported 时对应的本地字体元数据 id。 */
   headingFontId?: string;
+  /** Unset follows the book. These settings affect only the footnote popover. */
+  footnoteFontName?: string;
+  footnoteFontSource?: "system" | "imported";
+  footnoteFontId?: string;
   /** 字体来源；缺省时兼容旧版 customFontName。 */
   fontSource?: "system" | "imported";
   /** fontSource=imported 时对应的本地字体元数据 id。 */

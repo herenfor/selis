@@ -38,6 +38,22 @@ function setup() {
 }
 
 describe("reader settings extracted from App", () => {
+  it("restores the footnote selection separately and returns only that role to the book", async () => {
+    const t = setup();
+    try {
+      writeSavedSettings({ customFontName: "Body", fontSource: "system", footnoteFontName: "Notes", footnoteFontSource: "system" });
+      await t.dom.render(createElement(Host, { api: t.api }));
+      expect(t.current().settings.footnoteFontName).toBe("Notes");
+      await t.dom.run(() => t.current().settingsActions.selectImportedFootnoteFont({ id: "font-id", family: "Imported" }));
+      expect(readSavedSettings()).toMatchObject({ customFontName: "Body", footnoteFontId: "font-id", footnoteFontName: "Imported" });
+      await t.dom.run(() => t.current().settingsActions.selectFootnoteBookFont());
+      expect(readSavedSettings().footnoteFontSource).toBeUndefined();
+      expect(t.current().settings.customFontName).toBe("Body");
+    } finally {
+      await t.dom.dispose();
+    }
+  });
+
   it("keeps callback identities and applies retained callbacks to the latest queued state", async () => {
     const t = setup();
     try {

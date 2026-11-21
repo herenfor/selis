@@ -334,6 +334,9 @@ const SETTING_KEYS = new Set([
   "headingFontName",
   "headingFontSource",
   "headingFontId",
+  "footnoteFontSource",
+  "footnoteFontId",
+  "footnoteFontName",
   "preloadNextChapter",
 ]);
 

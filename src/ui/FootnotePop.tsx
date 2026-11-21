@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useLayoutEffect, useRef, useState } from "react";
+import { DEFAULT_FONT_FAMILY, escapeCssString } from "../render/sanitize";
 import { placeFootnote } from "./footnotePlacement";
 import { useUiText } from "./localization/UiLanguageProvider";
 
@@ -6,6 +7,11 @@ export interface FootnotePopProps {
   text: string;
   /** 图片注释/富文本注释的 HTML（书内已消毒内容） */
   html?: string;
+  fontFaceCss?: string;
+  fontSizePx: number;
+  fontSource?: "imported" | "system";
+  fontName?: string;
+  importedFontUrl?: string;
   /** 点击固定：不随鼠标移出关闭，显示“已固定” */
   pinned: boolean;
   /** 标记在阅读区（.main）坐标系的矩形 */
@@ -28,6 +34,13 @@ export interface FootnotePopProps {
  */
 export function FootnotePop(props: FootnotePopProps) {
   const { t } = useUiText();
+  const selectedFamily = props.fontSource === "imported" ? "selis-footnote-imported"
+    : props.fontSource === "system" && props.fontName ? `"${escapeCssString(props.fontName)}"` : undefined;
+  const contentStyle: CSSProperties & { "--footnote-font"?: string } = { fontSize: props.fontSizePx };
+  if (selectedFamily) contentStyle["--footnote-font"] = `${selectedFamily}, ${DEFAULT_FONT_FAMILY}`;
+  const faceCss = selectedFamily
+    ? props.importedFontUrl ? `@font-face { font-family: selis-footnote-imported; src: url("${props.importedFontUrl}"); }` : undefined
+    : props.fontFaceCss;
   const cardRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 300, h: 120 });
   const [containerSize, setContainerSize] = useState(() => {
@@ -83,7 +96,7 @@ export function FootnotePop(props: FootnotePopProps) {
         onMouseLeave={() => props.onHoverChange(false)}
         onClick={(e) => {
           e.stopPropagation();
-          const a = (e.target as HTMLElement | null)?.closest("a");
+          const a = (e.target as HTMLElement | null)?.closest("a[href]");
           if (!a) {
             if (!props.pinned && !(e.target as HTMLElement | null)?.closest("button")) props.onPin?.();
             return;
@@ -112,7 +125,8 @@ export function FootnotePop(props: FootnotePopProps) {
             ✕
           </button>
         </div>
-        <div className="footnote-text">
+        {faceCss && <style>{faceCss}</style>}
+        <div className="footnote-text" style={contentStyle}>
           {props.html ? (
             <div className="footnote-html" dangerouslySetInnerHTML={{ __html: props.html }} />
           ) : (

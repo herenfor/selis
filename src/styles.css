@@ -1176,7 +1176,7 @@ select option {
 }
 
 .footnote-text {
-  font-size: var(--fs-body);
+  font-family: var(--footnote-font, inherit);
   line-height: 1.6;
 }
 

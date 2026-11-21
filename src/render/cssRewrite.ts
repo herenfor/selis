@@ -128,7 +128,7 @@ function mapCssImports(css: string, replace: (match: string, href: string, suffi
   );
 }
 
-function mapCssUrls(css: string, replace: (match: string, href: string) => string): string {
+export function mapCssUrls(css: string, replace: (match: string, href: string) => string): string {
   return css.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]+))\s*\)/gi,
     (match, dq, sq, bare) => replace(match, (dq ?? sq ?? bare ?? "").trim()));
 }

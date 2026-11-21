@@ -945,7 +945,7 @@ background-position:center center;background-size:cover;background-color:#f9ebdf
       ...opts(), strictXml: false,
       settings: { ...DEFAULT_SETTINGS, fontFamily: "serif" },
     });
-    expect(readStyleText(out, "overrides")).toMatch(/html \{[^}]*font-family: serif;/);
+    expect(readStyleText(out, "overrides")).toContain("html:where(:not([data-reader-sample-fonts])) { font-family: serif;");
   });
 
   it("所选缺省字体在关闭覆盖时保留书籍 body 的整条字体链", async () => {

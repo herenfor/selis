@@ -20,6 +20,7 @@ import type { PagedStepPlan, SnapPosition } from "./nativeSnapPosition";
 import { isExternalUrl, isFragmentOnly } from "../core/paths";
 import { applyBrowserContextMenuPolicy } from "../platform/browserContextMenu";
 import { getFootnoteHoverAnchor, isFootnoteLink, resolveFootnote } from "./footnotes";
+import { footnoteTypography } from "./footnoteTypography";
 import type { FootnoteInfo } from "./footnotes";
 import type { ResourceServer } from "./resources";
 import { OwnedStylesheetUrls } from "./stylesheetCache";
@@ -7414,13 +7415,16 @@ export class ChapterPaginator {
     this.lastFootnoteInfo = info;
     this.footnotePinned = pinned;
     this.footnoteHoverGate.show(pinned);
+    const typography = footnoteTypography(info, a);
+    const display = typography ? { ...info, html: typography.html } : info;
     const projected = this.activeCompiledTextProjection && this.contentDoc
-      ? projectFootnoteDisplay(info, this.activeCompiledTextProjection, this.contentDoc)
+      ? projectFootnoteDisplay(display, this.activeCompiledTextProjection, this.contentDoc)
       : null;
     const r = a.getBoundingClientRect();
     this.onFootnote?.({
       text: projected?.text ?? info.text,
-      html: projected?.html ?? info.html,
+      html: projected?.html ?? display.html,
+      fontFaceCss: typography?.fontFaceCss,
       pinned,
       rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
     });

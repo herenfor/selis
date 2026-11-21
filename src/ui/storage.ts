@@ -77,6 +77,10 @@ export interface SavedSettings {
   headingFontName?: string;
   headingFontSource?: "system" | "imported";
   headingFontId?: string;
+  /** Unset follows the book. These settings affect only the footnote popover. */
+  footnoteFontName?: string;
+  footnoteFontSource?: "system" | "imported";
+  footnoteFontId?: string;
   /** 用户自定义 CSS 文本 */
   customCss?: string;
   /** 可重排章节是否强制覆盖为横排；旧设置缺省为 false */
@@ -122,6 +126,9 @@ export function toSavedReaderSettings(settings: ReaderSettings, uiScale: number)
     headingFontName: settings.headingFontName,
     headingFontSource: settings.headingFontSource,
     headingFontId: settings.headingFontId,
+    footnoteFontSource: settings.footnoteFontSource,
+    footnoteFontId: settings.footnoteFontId,
+    footnoteFontName: settings.footnoteFontName,
     customCss: settings.customCss,
     forceHorizontal: settings.forceHorizontal === true,
     txtIndent: settings.txtIndent === true,

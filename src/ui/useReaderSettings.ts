@@ -39,6 +39,9 @@ export function useReaderSettings() {
       headingFontName: saved.headingFontName,
       headingFontSource: saved.headingFontSource === "system" || saved.headingFontSource === "imported" ? saved.headingFontSource : undefined,
       headingFontId: saved.headingFontId,
+      footnoteFontSource: saved.footnoteFontSource === "system" || saved.footnoteFontSource === "imported" ? saved.footnoteFontSource : undefined,
+      footnoteFontName: typeof saved.footnoteFontName === "string" ? saved.footnoteFontName : undefined,
+      footnoteFontId: typeof saved.footnoteFontId === "string" ? saved.footnoteFontId : undefined,
       customCss: saved.customCss,
       forceHorizontal: saved.forceHorizontal === true,
       txtIndent: saved.txtIndent === true,
@@ -109,6 +112,12 @@ export function useReaderSettings() {
         setSettings((s) => ({ ...s, headingFontSource: undefined, headingFontName: undefined, headingFontId: undefined })),
       selectImportedHeadingFont: (font: Pick<UserFont, "id" | "family">) =>
         setSettings((s) => ({ ...s, headingFontSource: "imported", headingFontId: font.id, headingFontName: font.family })),
+      selectFootnoteBookFont: () =>
+        setSettings((s) => ({ ...s, footnoteFontSource: undefined, footnoteFontId: undefined, footnoteFontName: undefined })),
+      selectSystemFootnoteFont: (family: string) =>
+        setSettings((s) => ({ ...s, footnoteFontSource: "system", footnoteFontId: undefined, footnoteFontName: family })),
+      selectImportedFootnoteFont: (font: Pick<UserFont, "id" | "family">) =>
+        setSettings((s) => ({ ...s, footnoteFontSource: "imported", footnoteFontId: font.id, footnoteFontName: font.family })),
       selectSystemFont: (family: string) =>
         setSettings((s) => ({ ...s, fontSource: "system", customFontName: family, customFontId: undefined })),
       selectBookFont: () =>

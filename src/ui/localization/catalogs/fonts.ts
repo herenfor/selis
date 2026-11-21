@@ -29,6 +29,7 @@ export const fonts = defineMessages("fonts", {
   "fonts.split": { zh: "标题与正文分开", note: "Switch: set a heading font separately from body text.", max: 10 },
   "fonts.split.hint": { zh: "开启后可单独选择标题（h1–h6）字体；关闭时标题跟随正文。覆盖书籍字体的开关对两者同时生效。" },
   "fonts.role": { zh: "设置对象", note: "Accessible name for the body/heading font role selector." },
+  "fonts.role.footnote": "弹注",
   "fonts.role.body": "正文",
   "fonts.role.heading": "标题",
   "fonts.followBody": { zh: "跟随正文", note: "Heading uses the body font." },

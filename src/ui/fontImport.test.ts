@@ -31,7 +31,8 @@ describe("font import controller", () => {
       { name: "A.ttf" } as File,
       { name: "B.otf" } as File,
       { name: "notes.txt" } as File,
-    ]);
+    ], "footnote");
+    expect(importFile).toHaveBeenNthCalledWith(2, { name: "B.otf" }, "footnote");
     expect(result).toMatchObject({ kind: "ok", imported: 2, unsupported: 1 });
     expect(importFile).toHaveBeenCalledTimes(2);
     expect(busy).toEqual([true, false]);

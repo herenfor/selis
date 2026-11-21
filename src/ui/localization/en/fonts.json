@@ -26,6 +26,7 @@
   "fonts.split": "Separate heading font",
   "fonts.split.hint": "When on, choose a heading (h1–h6) font separately; when off headings follow body text. Override Book Fonts applies to both.",
   "fonts.role": "Font role",
+  "fonts.role.footnote": "Footnote",
   "fonts.role.body": "Body",
   "fonts.role.heading": "Heading",
   "fonts.followBody": "Follow body",

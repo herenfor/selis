@@ -1,3 +1,4 @@
+import type { FontRole } from "../render/settings";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { SystemFont, UserFont } from "./fontStore";
 import { createDragDepthTracker } from "./fontDrop";
@@ -22,6 +23,12 @@ export interface FontSettingsPanelProps {
   headingFontSource?: "system" | "imported";
   headingFontId?: string;
   headingFontName?: string;
+  footnoteFontSource?: "system" | "imported";
+  footnoteFontId?: string;
+  footnoteFontName?: string;
+  onSelectFootnoteSystem(family: string): void;
+  onSelectFootnoteBook(): void;
+  onSelectFootnoteImported(font: UserFont): void;
   onSplitHeadingFontChange?(enabled: boolean): void;
   onSelectHeadingSystem?(family: string): void;
   onSelectHeadingBook?(): void;
@@ -33,7 +40,7 @@ export interface FontSettingsPanelProps {
   onSelectBook(): void;
   onSelectImported(font: UserFont): void;
   onDelete(id: string): void;
-  onImport(files: File[], role?: "body" | "heading"): Promise<void> | void;
+  onImport(files: File[], role?: FontRole): Promise<void> | void;
   onClose(): void;
   nativeDragActive?: boolean;
   systemFontsStatus?: "idle" | "loading" | "ready" | "error";
@@ -71,7 +78,7 @@ export function visibleFontWindow<T>(items: readonly T[], offset: number, size: 
 export function FontSettingsPanel(props: FontSettingsPanelProps) {
   const { t } = useUiText();
   const [query, setQuery] = useState("");
-  const [role, setRole] = useState<"body" | "heading">("body");
+  const [role, setRole] = useState<FontRole>("body");
   const [tab, setTab] = useState<"system" | "imported">("system");
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(520);
@@ -85,23 +92,35 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
     if (props.systemFontsStatus === "idle") props.onLoadSystemFonts?.();
   }, [props.systemFontsStatus, props.onLoadSystemFonts]);
   const split = props.splitHeadingFont === true;
-  const activeRole = split ? role : "body";
-  const roleSource = activeRole === "heading" ? props.headingFontSource : props.source;
-  const roleFontId = activeRole === "heading" ? props.headingFontId : props.customFontId;
-  const roleFontName = activeRole === "heading" ? props.headingFontName : props.customFontName;
+  const activeRole = role === "heading" && !split ? "body" : role;
+  const choices = {
+    body: {
+      roleSource: props.source,
+      roleFontId: props.customFontId,
+      roleFontName: props.customFontName,
+      selectFollow: props.onSelectBook,
+      selectSystem: props.onSelectSystem,
+      selectImported: props.onSelectImported,
+    },
+    heading: {
+      roleSource: props.headingFontSource,
+      roleFontId: props.headingFontId,
+      roleFontName: props.headingFontName,
+      selectFollow: props.onSelectHeadingBook,
+      selectSystem: props.onSelectHeadingSystem,
+      selectImported: props.onSelectHeadingImported,
+    },
+    footnote: {
+      roleSource: props.footnoteFontSource,
+      roleFontId: props.footnoteFontId,
+      roleFontName: props.footnoteFontName,
+      selectFollow: props.onSelectFootnoteBook,
+      selectSystem: props.onSelectFootnoteSystem,
+      selectImported: props.onSelectFootnoteImported,
+    },
+  };
+  const { roleSource, roleFontId, roleFontName, selectFollow, selectSystem, selectImported } = choices[activeRole];
   const followLabel = activeRole === "heading" ? t("fonts.followBody") : t("fonts.followBook");
-  const selectFollow = (): void => {
-    if (activeRole === "heading") props.onSelectHeadingBook?.();
-    else props.onSelectBook();
-  };
-  const selectSystem = (family: string): void => {
-    if (activeRole === "heading") props.onSelectHeadingSystem?.(family);
-    else props.onSelectSystem(family);
-  };
-  const selectImported = (font: UserFont): void => {
-    if (activeRole === "heading") props.onSelectHeadingImported?.(font);
-    else props.onSelectImported(font);
-  };
   const normalized = query.trim().toLocaleLowerCase();
   const systems = useMemo(() => props.systemFonts.filter((font) => {
     if (!normalized) return true;
@@ -142,7 +161,7 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
   };
   const selectTab = (next: "system" | "imported") => { setTab(next); resetScroll(); };
   useEffect(() => {
-    if (!split) setRole("body");
+    if (!split) setRole((current) => current === "heading" ? "body" : current);
   }, [split]);
   const importFiles = async (files: File[]) => {
     if (props.busy || dropBusy || files.length === 0) return;
@@ -176,7 +195,7 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const { dragging, grip } = useSheetDrag({ sheetRef: panelRef, onDismiss: props.onClose });
   useScrollEdgeFade(scrollRef);
-  return <div ref={panelRef} className={`font-settings-panel${dragActive ? " font-drag-active" : ""}${dragging ? " is-dragging" : ""}`} role="dialog" aria-modal="true" aria-label={t("fonts.dialog")}
+  return <div ref={panelRef} data-font-role={activeRole} className={`font-settings-panel${dragActive ? " font-drag-active" : ""}${dragging ? " is-dragging" : ""}`} role="dialog" aria-modal="true" aria-label={t("fonts.dialog")}
     onDragEnter={onDragEnter}
     onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = effectiveBusy ? "none" : "copy"; }}
     onDragLeave={onDragLeave} onDrop={onDrop}>
@@ -196,7 +215,6 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
             <span>{t("fonts.split")}</span>
             <Switch inRow checked={split} onChange={(checked) => {
               props.onSplitHeadingFontChange?.(checked);
-              if (!checked) setRole("body");
             }} />
           </label>
         )}
@@ -215,17 +233,16 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
       </div>
     )}
 
-    {split && (
-      <div className="font-settings-rolebar">
-        <span className="font-settings-rolebar-label">{t("fonts.role")}</span>
-        <Segmented label={t("fonts.role")} value={role} className="font-settings-tabs font-settings-roles"
-          options={[
-            { value: "body", label: t("fonts.role.body") },
-            { value: "heading", label: t("fonts.role.heading") },
-          ]}
-          onChange={(next) => { setRole(next); resetScroll(); }} />
-      </div>
-    )}
+    <div className="font-settings-rolebar">
+      <span className="font-settings-rolebar-label">{t("fonts.role")}</span>
+      <Segmented label={t("fonts.role")} value={activeRole} className="font-settings-tabs font-settings-roles"
+        options={[
+          { value: "body", label: t("fonts.role.body") },
+          ...(split ? [{ value: "heading" as const, label: t("fonts.role.heading") }] : []),
+          { value: "footnote", label: t("fonts.role.footnote") },
+        ]}
+        onChange={(next) => { setRole(next); resetScroll(); }} />
+    </div>
 
     <div className="font-settings-toolbar">
       <input className="font-search" type="search" placeholder={t("fonts.search")} aria-label={t("fonts.search")} value={query}
@@ -259,7 +276,7 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
             const active = roleSource === "system" && roleFontName === family;
             return (
               <div key={family} className={`font-settings-row-wrap${active ? " active" : ""}`}>
-                <button className="font-settings-row" onClick={() => selectSystem(family)}>{family}</button>
+                <button className="font-settings-row" onClick={() => selectSystem?.(family)}>{family}</button>
                 <span className="font-settings-row-mark" aria-hidden="true">{active ? <CheckIcon /> : null}</span>
               </div>
             );
@@ -268,7 +285,7 @@ export function FontSettingsPanel(props: FontSettingsPanelProps) {
           const active = roleSource === "imported" && roleFontId === item.id;
           return (
             <div key={item.id} className={`font-settings-row-wrap${active ? " active" : ""}`}>
-              <button className="font-settings-row" onClick={() => selectImported(item)} title={item.fileName}>{item.family}</button>
+              <button className="font-settings-row" onClick={() => selectImported?.(item)} title={item.fileName}>{item.family}</button>
               <span className="font-settings-row-mark" aria-hidden="true">{active ? <CheckIcon /> : null}</span>
               <button className="font-delete" onClick={() => props.onDelete(item.id)} disabled={effectiveBusy} title={t("fonts.delete")} aria-label={t("fonts.delete")}><CloseIcon /></button>
             </div>

@@ -45,7 +45,8 @@
 .font-settings-rolebar .font-settings-roles {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   max-width: none;
 }
 .font-settings-source > button,

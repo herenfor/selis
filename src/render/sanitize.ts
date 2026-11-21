@@ -7,7 +7,7 @@ import { isFullPageImage, linkedImagePage } from "./fullPageImage";
 import { childElements, localNameOf } from "../core/xml";
 import { imageLayoutPolicy, scrollMediaDefaultsCss } from "./imageLayoutPolicy";
 import { buildThemeCss } from "./readerTheme";
-import { TEXT_MEASURE, type ReaderSettings } from "./settings";
+import { DEFAULT_SETTINGS, TEXT_MEASURE, type ReaderSettings } from "./settings";
 import { deferPlaybackSource, isPlaybackSource, MEDIA_PLAYER_CSS } from "./mediaMarkup";
 
 export interface SanitizeOptions {
@@ -87,7 +87,7 @@ export function isSafeColor(v: string): boolean {
   return SAFE_NAMES.has(v.trim().toLowerCase());
 }
 
-const DEFAULT_FONT_FAMILY = `"Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif`;
+export const DEFAULT_FONT_FAMILY = `"Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif`;
 
 function buildOverrideCss(s: ReaderSettings): string {
   const maxEm = TEXT_MEASURE.maxEm;
@@ -249,10 +249,11 @@ function buildOverrideCss(s: ReaderSettings): string {
     : "";
   // Only explicit override mode may replace authored html/body or descendant
   // fonts. With it off, the chosen font belongs to the fallback layer below.
+  const readingFonts = ":where(:root:not([data-reader-sample-fonts]))";
   const descendantFontCss = bodyFontCss
     ? `
 /* [L2] 用户开启覆盖书籍字体：选定字体覆盖正文后代（关闭时不输出）。 */
-:where(#${VIEWER_ID}) :not(pre, code, kbd, samp, tt, pre *, code *, kbd *, samp *, tt *, svg, svg *, math, math *) {
+${readingFonts} :where(#${VIEWER_ID}) :not(pre, code, kbd, samp, tt, pre *, code *, kbd *, samp *, tt *, svg, svg *, math, math *) {
   ${bodyFontCss}
 }`
     : "";
@@ -263,8 +264,8 @@ function buildOverrideCss(s: ReaderSettings): string {
   const headingOverrideCss = headingFontCss
     ? `
 /* [L2] 用户开启覆盖书籍字体：标题（h1–h6）使用单独选择的标题字体；代码/公式保留原字体。 */
-:where(#${VIEWER_ID}) :is(h1, h2, h3, h4, h5, h6),
-:where(#${VIEWER_ID}) :is(h1, h2, h3, h4, h5, h6) :not(pre, code, kbd, samp, tt, svg, svg *, math, math *) {
+${readingFonts} :where(#${VIEWER_ID}) :is(h1, h2, h3, h4, h5, h6),
+${readingFonts} :where(#${VIEWER_ID}) :is(h1, h2, h3, h4, h5, h6) :not(pre, code, kbd, samp, tt, svg, svg *, math, math *) {
   ${headingFontCss}
 }`
     : "";
@@ -285,9 +286,11 @@ html, body, #${VIEWER_ID},
     ? `/* [L2] TXT 段首缩进（见 core/documentFormats）。 */\n#${VIEWER_ID} { --reader-txt-indent: 2em; }`
     : "";
   const typographyCss = [
-    `html { font-size: ${s.fontSizePx}px !important;${s.fontFamily ? ` font-family: ${s.fontFamily};` : ""} }`,
+    `html { font-size: ${s.fontSizePx}px !important; }`,
+    s.fontFamily ? `html:where(:not([data-reader-sample-fonts])) { font-family: ${s.fontFamily}; }` : "",
+    `html[data-reader-sample-fonts] { font-size: ${DEFAULT_SETTINGS.fontSizePx}px !important; }`,
     fontFaceCss,
-    bodyFontCss ? `body { ${bodyFontCss} }` : "",
+    bodyFontCss ? `${readingFonts} body { ${bodyFontCss} }` : "",
     descendantFontCss,
     headingOverrideCss,
     `/* [L2] PC 阅读静止隐藏指针：宿主在本文档根上切换 data-reader-cursor-idle
@@ -798,7 +801,7 @@ ${VIEWER_TAG}#${VIEWER_ID}::-webkit-scrollbar {
     : null;
   fontFallback.textContent = `@layer epub-reader-font-fallback { :where(html) { font-family: ${fallbackFamily}; }${headingFallbackFamily
     ? ` :where(h1, h2, h3, h4, h5, h6) { font-family: ${headingFallbackFamily}; }`
-    : ""} }`;
+    : ""} :where(html[data-reader-sample-fonts]) { font-family: ${DEFAULT_FONT_FAMILY}; } :where(html[data-reader-sample-fonts]) :where(h1,h2,h3,h4,h5,h6) { font-family: inherit; } }`;
   // XML documents (including the Node parser) do not expose HTMLDocument.head.
   const fontHead = doc.getElementsByTagName("head")[0] ?? head;
   const firstStylesheet = Array.from(fontHead.childNodes)
