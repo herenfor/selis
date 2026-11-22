@@ -35,6 +35,33 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.6",
+    status: "released",
+    releasedOn: "2026-11-22",
+    items: [
+      {
+        category: "new",
+        text: "停靠的目录、书签和笔记面板可以拖动内边缘调宽调窄，方向键、Home/End 和双击也能调整或复位；窄窗口放不下时会自动收起，窗口变宽后自动恢复。",
+      },
+      {
+        category: "new",
+        text: "Android 上从文件管理器「其他应用打开」可以直接把 TXT 交给 SeLis 导入，EPUB 也同样支持。",
+      },
+      {
+        category: "improved",
+        text: "停靠目录的内边改成与正文贴齐的直角，三个面板不再显示滚动条轨道；打开或收起目录时正文页不再先跳一下。",
+      },
+      {
+        category: "improved",
+        text: "弹注优先使用书里的字体和相对字号，Aa 新增「弹注」字体选项，可以单独选择，字号仍跟随正文。",
+      },
+      {
+        category: "fixed",
+        text: "带 Ruby 注音的正文现在能正确搜到、跳转并高亮，包括跨注音分段和相邻句子的命中。",
+      },
+    ],
+  },
+  {
     version: "0.4.5",
     status: "released",
     releasedOn: "2026-11-19",
@@ -127,45 +154,6 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       {
         category: "fixed",
         text: "修复图片查看器触屏 1:1 入口、顶栏首次点击、手机语言选项溢出等一批问题。",
-      },
-    ],
-  },
-  {
-    version: "0.4.1",
-    status: "released",
-    releasedOn: "2026-11-11",
-    items: [
-      {
-        category: "improved",
-        text: "应用更新已为 GitHub 仓库迁移做好准备。建议先升级到本版，便于仓库改名后继续使用应用内更新。",
-      },
-      {
-        category: "new",
-        text: "书架支持多层文件夹，可按目录整理书库并批量移动书籍。",
-      },
-      {
-        category: "new",
-        text: "新增 AZW3（KF8）与 FB2 格式，可导入阅读、保存笔记并导出原书。",
-      },
-      {
-        category: "new",
-        text: "支持从 Readest 备份导入书籍与阅读记录，也可导入 KOReader 的阅读进度。",
-      },
-      {
-        category: "new",
-        text: "连接 WebDAV 后可手动把原书备份到网盘，并逐本重试失败项。",
-      },
-      {
-        category: "new",
-        text: "选中文字后可复制、标注，并生成分享长图。",
-      },
-      {
-        category: "new",
-        text: "首次提供 Linux 桌面版（deb），支持本地书架与 EPUB/TXT/漫画阅读。",
-      },
-      {
-        category: "fixed",
-        text: "修复文件夹导入、阅读恢复与书架搜索/排序状态等一批问题。",
       },
     ],
   },
