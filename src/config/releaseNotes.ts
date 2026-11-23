@@ -35,6 +35,37 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.7",
+    status: "released",
+    releasedOn: "2026-11-24",
+    items: [
+      {
+        category: "new",
+        text: "正文搜索会保留一本书的全部命中，不再只保留前 100 条；关闭搜索面板后结果、当前项和位置都会保留，用同一关键词重新打开不会重新扫描。",
+      },
+      {
+        category: "new",
+        text: "阅读页底部新增搜索导航条：显示当前位置和总数，可「上一条 / 下一条 / 返回结果」；跨章命中等落点确认后才前进。",
+      },
+      {
+        category: "improved",
+        text: "搜索命中数边扫边增长，结果列表只加载当前可见的十几行，几千条命中也能顺畅滚动；扫描中可以暂停，之后从断点继续，读章失败可重试。",
+      },
+      {
+        category: "improved",
+        text: "「搜索原文」合并为一个开关，只在书里存在繁简或自定义文本转换时出现，并移到了搜索面板标题栏。",
+      },
+      {
+        category: "fixed",
+        text: "目录、书签和笔记面板恢复细滚动条，长目录可以直接拖动滚动。",
+      },
+      {
+        category: "fixed",
+        text: "多看 duokan-image-single 容器内有多张图片时按图逐页分页，双页模式按阅读顺序 1-2 / 3-4 配对，图注和作者固定尺寸的图片不再被误转。",
+      },
+    ],
+  },
+  {
     version: "0.4.6",
     status: "released",
     releasedOn: "2026-11-22",
