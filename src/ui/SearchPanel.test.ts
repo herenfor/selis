@@ -287,3 +287,21 @@ describe("Issue #16 / ER-0228 search panel", () => {
     expect(markup).not.toContain("search-truncated");
   });
 });
+
+describe("ER-0228 review fixes in the panel", () => {
+  it("offers resume while paused and a retry after a failed chapter", () => {
+    const paused = renderToStaticMarkup(createElement(SearchPanel, {
+      query: "测试关键词", onQueryChange: () => undefined, results: [], status: "paused",
+      processed: 12, total: 300, count: 40, onSelect: () => undefined, onClose: () => undefined,
+      onResume: () => undefined,
+    }));
+    expect(paused).toContain("搜索已暂停");
+    expect(paused).toContain("继续搜索");
+    const failed = renderToStaticMarkup(createElement(SearchPanel, {
+      query: "测试关键词", onQueryChange: () => undefined, results: [], status: "error",
+      processed: 12, total: 300, count: 40, onSelect: () => undefined, onClose: () => undefined,
+      onResume: () => undefined,
+    }));
+    expect(failed).toContain("重试失败章节");
+  });
+});

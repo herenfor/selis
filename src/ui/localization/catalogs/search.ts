@@ -56,6 +56,7 @@ export const search = defineMessages("search", {
   "search.view.originalSwitch": { zh: "搜索原文", note: "Single switch replacing the old display/original segmented control: on = search the book's original text, off = search the displayed (converted) text.", max: 12 },
   "search.status.paused": "搜索已暂停",
   "search.resume": "继续搜索",
+  "search.retry": "重试失败章节",
   "search.nav.prev": { zh: "上一条", note: "Reader search bar: previous result.", max: 6 },
   "search.nav.next": { zh: "下一条", note: "Reader search bar: next result.", max: 6 },
   "search.nav.back": { zh: "返回结果", note: "Reader search bar: reopen the result list.", max: 8 },

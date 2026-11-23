@@ -110,6 +110,7 @@ export function useReaderChapterCallbacks({
   closeForeground,
   beginExplicitNavigation,
   toPersistedReaderAnchor,
+  onSearchPreciseSettledRef,
 }: {
   dispatchRestoreGate: ReaderSessionHost["dispatchRestoreGate"];
   dispatchReaderSession: ReaderSessionHost["dispatchReaderSession"];
@@ -148,6 +149,8 @@ export function useReaderChapterCallbacks({
   closeForeground: () => void;
   beginExplicitNavigation: ReaderSessionHost["beginExplicitNavigation"];
   toPersistedReaderAnchor: ToPersistedReaderAnchor;
+  /** Cross-chapter search navigation settles here: located=true only when the hit was found. */
+  onSearchPreciseSettledRef?: MutableRefObject<((requestId: number, located: boolean) => void) | null>;
 }): ReaderChapterCallbacks {
   /** 语义锚点失败：解除显示门，但守住进度，直到读者真实移动后再写。 */
   const handleReaderNavigationUnresolved = useCallback((reported: boolean, ticket?: RestoreTicket | null): void => {
@@ -190,6 +193,7 @@ export function useReaderChapterCallbacks({
     if (latestPreciseRequestRef.current !== status.requestId) return;
     latestPreciseRequestRef.current = null;
     setPreciseTarget(null);
+    onSearchPreciseSettledRef?.current?.(status.requestId, status.status === "located");
     if (status.status === "unresolved") {
       showReaderNotice(uiText("notice.reader.sourceNotFoundNote"), "warn");
     } else if (status.status === "located-reference") {
@@ -197,7 +201,7 @@ export function useReaderChapterCallbacks({
     } else if (status.status === "unsupported-highlight") {
       showReaderNotice(uiText("notice.reader.noHighlight"), "warn");
     }
-  }, [showReaderNotice]);
+  }, [onSearchPreciseSettledRef, showReaderNotice]);
 
   // ---- 章节状态回调 ----
   const handleUserReadingPositionChange = useCallback((ticket?: RestoreTicket | null) => {

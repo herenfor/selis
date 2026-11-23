@@ -4,6 +4,7 @@ import { useSheetDrag } from "./sheetDrag";
 import type { KeyboardEvent } from "react";
 import { CloseIcon } from "./readerIcons";
 import { uiText, useUiText } from "./localization/UiLanguageProvider";
+import "./searchResults.css";
 
 export type SearchStatus = "idle" | "searching" | "paused" | "complete" | "error";
 
@@ -477,7 +478,7 @@ export function SearchResultWindowList({ virtual, navigationBusy = false, onSele
 
   useEffect(() => {
     if (last > first) onRangeRef.current(first, last);
-  }, [first, last]);
+  }, [first, last, virtual.count]);
 
   const rows: Array<{ index: number; row?: SearchPanelResult }> = [];
   for (let index = first; index < last; index++) rows.push({ index, row: virtual.rowAt(index) });
@@ -746,6 +747,9 @@ export function SearchPanel(props: SearchPanelProps) {
           )}
           {props.status === "paused" && props.onResume && (
             <button className="search-cancel" type="button" onClick={props.onResume}>{t("search.resume")}</button>
+          )}
+          {props.status === "error" && props.onResume && (
+            <button className="search-cancel" type="button" onClick={props.onResume}>{t("search.retry")}</button>
           )}
           {props.status === "error" && props.errorMessage && <span className="search-error">{t("search.errorDetail", { message: props.errorMessage })}</span>}
         </div>

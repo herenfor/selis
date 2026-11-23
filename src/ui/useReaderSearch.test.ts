@@ -19,18 +19,26 @@ const resolved: SearchResult = {
   ...rows[0], originalRange: { start: 20, end: 25 }, textOffset: 20, textSnippet: "Alice", matchedText: "Alice",
 };
 
-function fakeQuery() {
+function fakeQuery(onUpdate?: (snapshot: ReaderQuerySnapshot) => void) {
   let snapshot: ReaderQuerySnapshot = { status: "scanning", completed: 0, total: 3, count: 0 };
   const query: ReaderSearchQuery = {
     snapshot: () => ({ ...snapshot }),
     finished: Promise.resolve(snapshot),
-    window: vi.fn(async (offset: number, limit: number) => rows.slice(offset, offset + limit)),
+    // Only rows the scan has already published are visible to the panel.
+    window: vi.fn(async (offset: number, limit: number) =>
+      rows.slice(offset, Math.min(offset + limit, snapshot.count))),
     resolve: vi.fn(async () => resolved),
     pause: vi.fn(() => { snapshot = { ...snapshot, status: "paused" }; }),
     resume: vi.fn(async () => snapshot),
     cancel: vi.fn(),
   };
-  return { query, publish: (next: ReaderQuerySnapshot) => { snapshot = next; } };
+  return {
+    query,
+    publish: (next: ReaderQuerySnapshot, notify = true) => {
+      snapshot = next;
+      if (notify) onUpdate?.(next);
+    },
+  };
 }
 
 function setup() {
@@ -41,7 +49,7 @@ function setup() {
   ports.create.mockReset().mockImplementation(() => {
     const session = {
       startQuery: vi.fn((text: string, options: { onUpdate?(s: ReaderQuerySnapshot): void }) => {
-        const entry = { ...fakeQuery(), text, options };
+        const entry = { ...fakeQuery(options.onUpdate), text, options };
         queries.push(entry);
         return entry.query;
       }),
@@ -86,6 +94,7 @@ describe("current-book search: streaming query and retained results", () => {
       await t.advance(1);
       expect(t.sessions[0].startQuery.mock.calls[0][0]).toBe("Alice");
       expect(t.current().searchStatus).toBe("searching");
+      await t.dom.run(() => t.queries[0].publish({ status: "scanning", completed: 1, total: 3, count: 100 }));
       await t.dom.run(async () => { await t.queries[0].query.window(0, 128); });
       await t.dom.run(() => t.current().ensureSearchRows(0, 40));
       expect(t.queries[0].query.window).toHaveBeenCalledTimes(2);
@@ -101,11 +110,8 @@ describe("current-book search: streaming query and retained results", () => {
       await t.render();
       await t.dom.run(() => t.current().setSearchQuery("Alice"));
       await t.advance(180);
+      await t.dom.run(() => t.queries[0].publish({ status: "scanning", completed: 1, total: 3, count: 300 }));
       await t.dom.run(() => t.current().ensureSearchRows(0, 20));
-      await t.dom.run(() => {
-        t.queries[0].publish({ status: "scanning", completed: 1, total: 3, count: 300 });
-        t.queries[0].options.onUpdate?.({ status: "scanning", completed: 1, total: 3, count: 300 });
-      });
       expect(t.current().searchCount).toBe(300);
       await t.render();
       await t.advance(400);
@@ -145,6 +151,41 @@ describe("current-book search: streaming query and retained results", () => {
       await t.dom.run(async () => { result = await t.current().resolveSearchIndex(3); });
       expect(result).toEqual(resolved);
       expect(t.queries[0].query.resolve).toHaveBeenCalledWith(3);
+    } finally { await t.dispose(); }
+  });
+});
+
+describe("ER-0228 review fixes", () => {
+  it("refills a window that was fetched before the scan published more rows", async () => {
+    const t = setup();
+    try {
+      await t.render();
+      await t.dom.run(() => t.current().setSearchQuery("Alice"));
+      await t.advance(180);
+      // First chapter publishes one row; the window is fetched with that count.
+      await t.dom.run(() => t.queries[0].publish({ status: "scanning", completed: 1, total: 3, count: 1 }));
+      await t.dom.run(() => t.current().ensureSearchRows(0, 20));
+      expect(t.current().searchPanelRowAt(0)?.snippet).toBe("Alice 0");
+      expect(t.current().searchPanelRowAt(13)).toBeUndefined();
+      // The count grows; the same window must be fetched again instead of skipped.
+      await t.dom.run(() => t.queries[0].publish({ status: "scanning", completed: 2, total: 3, count: 20 }));
+      await t.dom.run(() => t.current().ensureSearchRows(0, 20));
+      expect(t.queries[0].query.window).toHaveBeenCalledTimes(2);
+      expect(t.current().searchPanelRowAt(13)?.snippet).toBe("Alice 13");
+    } finally { await t.dispose(); }
+  });
+
+  it("drops the previous result position when the keywords change", async () => {
+    const t = setup();
+    try {
+      await t.render();
+      await t.dom.run(() => t.current().setSearchQuery("Alice"));
+      await t.advance(180);
+      await t.dom.run(() => t.current().setSearchCurrentIndex(15));
+      expect(t.current().searchCurrentIndex).toBe(15);
+      await t.dom.run(() => t.current().setSearchQuery("Rabbit"));
+      await t.advance(180);
+      expect(t.current().searchCurrentIndex).toBeNull();
     } finally { await t.dispose(); }
   });
 });

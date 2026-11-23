@@ -52,6 +52,7 @@
   "search.view.originalSwitch": "搜尋原文",
   "search.status.paused": "搜尋已暫停",
   "search.resume": "繼續搜尋",
+  "search.retry": "重試失敗章節",
   "search.nav.prev": "上一條",
   "search.nav.next": "下一條",
   "search.nav.back": "返回結果",

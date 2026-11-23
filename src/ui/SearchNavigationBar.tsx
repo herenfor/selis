@@ -1,27 +1,25 @@
 import { useUiText } from "./localization/UiLanguageProvider";
+import type { ReaderSearchController } from "./useReaderSearchController";
+import "./searchNavigation.css";
+
+type BarProps = ReaderSearchController["barProps"] & { hidden?: boolean };
 
 /**
  * Reader-side search navigation: visible while the current book has a search
  * query with published hits and the result panel is closed. Every action goes
  * through the existing precise-navigation entry; this bar owns no position.
  */
-export function SearchNavigationBar(props: {
-  count: number;
-  current: number | null;
-  scanning: boolean;
-  busy?: boolean;
-  waiting?: boolean;
-  onPrevious(): void;
-  onNext(): void;
-  onBackToResults(): void;
-}) {
+export function SearchNavigationBar(props: BarProps) {
   const { t } = useUiText();
+  if (props.hidden || (props.count === 0 && !props.scanning)) return null;
   const position = props.current === null ? 0 : props.current + 1;
   const atEnd = props.current === null ? props.count === 0 : props.current >= props.count - 1;
   return (
     <div className="search-nav-bar" role="group" aria-label={t("search.title")}>
       <span className="search-nav-position" aria-live="polite">
-        {t("search.nav.progress", { current: position, total: props.count })}
+        {props.paused
+          ? t("search.status.paused")
+          : t("search.nav.progress", { current: position, total: props.count })}
       </span>
       <button
         type="button"

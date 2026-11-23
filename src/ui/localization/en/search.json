@@ -52,6 +52,7 @@
   "search.view.originalSwitch": "Original text",
   "search.status.paused": "Search paused",
   "search.resume": "Resume search",
+  "search.retry": "Retry failed chapters",
   "search.nav.prev": "Previous",
   "search.nav.next": "Next",
   "search.nav.back": "Back to results",

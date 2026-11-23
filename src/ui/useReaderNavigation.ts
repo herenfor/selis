@@ -58,6 +58,12 @@ type PendingChapterSeek = {
 };
 type TocFollowSeek = { token: ScrubToken; fromHref?: string; memory: SidebarNavigationMemory };
 
+/** Whether a clicked search result actually moved the reader. */
+export type SearchNavigationOutcome =
+  | { readonly status: "committed"; readonly requestId: number }
+  | { readonly status: "pending"; readonly requestId: number }
+  | { readonly status: "failed" };
+
 export function useReaderNavigation({
   readReaderPosition,
   readerRef,
@@ -475,9 +481,15 @@ export function useReaderNavigation({
     }
   }, [dispatchScrub]);
 
-  /** 搜索结果使用文本锚点定位；预览不写进度，只有用户点击才进入历史。 */
-  const handleSearchNavigate = useCallback((result: SearchResult): void => {
-    if (!book || searchNavigationBusy || result.spineIndex < 0 || result.spineIndex >= book.spine.length) return;
+  /**
+   * 搜索结果使用文本锚点定位；预览不写进度，只有用户点击才进入历史。
+   * `committed` 表示当前章已定位；`pending` 表示已请求跨章定位，要等
+   * display-ready / 精确目标结算后才算命中；`failed` 表示这次点击没有生效。
+   */
+  const handleSearchNavigate = useCallback((result: SearchResult): SearchNavigationOutcome => {
+    if (!book || searchNavigationBusy || result.spineIndex < 0 || result.spineIndex >= book.spine.length) {
+      return { status: "failed" };
+    }
     const targetAnchor: PersistedReaderAnchor = {
       index: -1,
       ratio: 0,
@@ -520,10 +532,10 @@ export function useReaderNavigation({
           }
           handleFootnoteClose();
           closeForeground();
-          return;
+          return { status: "committed", requestId };
         }
         showReaderNotice(uiText("notice.reader.sourceNotFound"), "warn");
-        return;
+        return { status: "failed" };
       }
       const direct = readerRef.current?.navigateWithinCurrentChapter({
         readingAnchor: targetAnchor,
@@ -535,10 +547,10 @@ export function useReaderNavigation({
         showReaderNotice(uiText("notice.reader.paragraphOnly"), "warn");
         handleFootnoteClose();
         closeForeground();
-        return;
+        return { status: "committed", requestId };
       }
       showReaderNotice(uiText("notice.reader.sourceNotFound"), "warn");
-      return;
+      return { status: "failed" };
     }
 
     // 跨章先进入目标章节；精确范围/高亮在显示门内解析，失败不冒充命中。
@@ -562,6 +574,7 @@ export function useReaderNavigation({
     setAnchorNonce((nonce) => nonce + 1);
     handleFootnoteClose();
     closeForeground();
+    return { status: "pending", requestId };
   }, [
     book,
     searchNavigationBusy,

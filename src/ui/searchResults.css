@@ -1,0 +1,31 @@
+/* 搜索面板：窗口化结果列表与「搜索原文」开关（Issue #16 / ER-0228）。 */
+.search-results-window { display: block; position: relative; }
+.search-results-spacer { position: relative; width: 100%; }
+.search-result.is-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(84px - 6px);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.search-result.is-window.is-placeholder {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border-radius: var(--r-sm);
+}
+.search-result.is-window.is-current {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--btn-tint));
+}
+.search-origin-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-top: 6px;
+  padding: 0 18px;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.search-origin-switch input { accent-color: var(--accent); }

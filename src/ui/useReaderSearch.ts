@@ -44,12 +44,14 @@ export function useReaderSearchRefs() {
   const searchQueryHandleRef = useRef<ReaderSearchQuery | null>(null);
   const searchQueryTextRef = useRef("");
   const searchRowsRef = useRef(new Map<number, SearchPreview>());
-  const searchLoadedWindowsRef = useRef(new Set<number>());
+  /** Window offset -> how many published rows were fetched for it so far. */
+  const searchLoadedWindowsRef = useRef(new Map<number, number>());
+  const searchInflightWindowsRef = useRef(new Set<number>());
   const searchScrollTopRef = useRef(0);
   const searchGenerationRef = useRef(0);
   return {
     searchSessionRef, searchQueryHandleRef, searchQueryTextRef, searchRowsRef,
-    searchLoadedWindowsRef, searchScrollTopRef, searchGenerationRef,
+    searchLoadedWindowsRef, searchInflightWindowsRef, searchScrollTopRef, searchGenerationRef,
   };
 }
 
@@ -74,9 +76,9 @@ function phaseOf(snapshot: ReaderQuerySnapshot): SearchStatus {
 }
 
 export function useReaderSearchSession({ view, book, server, searchView, compiledTextProjection,
-  searchSessionRef, searchQueryHandleRef, searchRowsRef, searchLoadedWindowsRef, searchGenerationRef,
-  setSearchStatus, setSearchProgress, setSearchCount, setSearchError, setSearchRowsVersion,
-  setSearchCurrentIndex, setSearchSessionVersion,
+  searchSessionRef, searchQueryHandleRef, searchRowsRef, searchLoadedWindowsRef, searchInflightWindowsRef,
+  searchGenerationRef, setSearchStatus, setSearchProgress, setSearchCount, setSearchError,
+  setSearchRowsVersion, setSearchCurrentIndex, setSearchSessionVersion,
 }: ReaderSearchContext) {
   // 搜索会话按“打开的一本书 + 当前视图”持有；创建本身不读取章节，首次查询才
   // 按 spine 渐进提取。换书/返回书架/切换视图时释放正文和位置映射。
@@ -88,6 +90,7 @@ export function useReaderSearchSession({ view, book, server, searchView, compile
     searchGenerationRef.current++;
     searchRowsRef.current.clear();
     searchLoadedWindowsRef.current.clear();
+    searchInflightWindowsRef.current.clear();
     setSearchCount(0);
     setSearchStatus("idle");
     setSearchProgress({ processed: 0, total: 0 });
@@ -115,8 +118,8 @@ export function useReaderSearchSession({ view, book, server, searchView, compile
 
 export function useReaderSearchQuery({ searchQuery, book, searchSessionVersion,
   searchSessionRef, searchQueryHandleRef, searchQueryTextRef, searchRowsRef, searchLoadedWindowsRef,
-  searchScrollTopRef, searchGenerationRef, setSearchStatus, setSearchProgress, setSearchCount, setSearchError,
-  setSearchRowsVersion,
+  searchInflightWindowsRef, searchScrollTopRef, searchGenerationRef, setSearchStatus, setSearchProgress,
+  setSearchCount, setSearchError, setSearchRowsVersion, setSearchCurrentIndex,
 }: ReaderSearchContext) {
   // 输入变化立即作废旧查询；防抖只延迟新查询。关面板不取消：已发起的扫描可
   // 在后台完成，重开搜索直接复用同一句柄与已发布结果。
@@ -131,7 +134,9 @@ export function useReaderSearchQuery({ searchQuery, book, searchSessionVersion,
       searchGenerationRef.current++;
       searchRowsRef.current.clear();
       searchLoadedWindowsRef.current.clear();
+      searchInflightWindowsRef.current.clear();
       setSearchCount(0);
+      setSearchCurrentIndex(null);
       setSearchStatus("idle");
       setSearchProgress({ processed: 0, total: 0 });
       setSearchError(undefined);
@@ -148,7 +153,9 @@ export function useReaderSearchQuery({ searchQuery, book, searchSessionVersion,
       if (generation !== searchGenerationRef.current) return;
       searchRowsRef.current.clear();
       searchLoadedWindowsRef.current.clear();
+      searchInflightWindowsRef.current.clear();
       searchScrollTopRef.current = 0;
+      setSearchCurrentIndex(null);
       setSearchRowsVersion((version) => version + 1);
       setSearchError(undefined);
       setSearchStatus("searching");
@@ -174,19 +181,27 @@ export function useReaderSearchQuery({ searchQuery, book, searchSessionVersion,
     }, SEARCH_QUERY_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [searchQuery, searchSessionVersion, searchSessionRef, searchQueryHandleRef, searchQueryTextRef,
-    searchRowsRef, searchLoadedWindowsRef, searchScrollTopRef, searchGenerationRef, setSearchStatus,
-    setSearchProgress, setSearchCount, setSearchError, setSearchRowsVersion]);
+    searchRowsRef, searchLoadedWindowsRef, searchInflightWindowsRef, searchScrollTopRef, searchGenerationRef,
+    setSearchStatus, setSearchProgress, setSearchCount, setSearchError, setSearchRowsVersion,
+    setSearchCurrentIndex]);
 }
 
 type ReaderSearchPanelContext = Pick<ReaderSearchRefs,
-  "searchRowsRef" | "searchLoadedWindowsRef" | "searchQueryHandleRef" | "searchGenerationRef"> &
-  Pick<ReaderSearchState, "searchRowsVersion" | "setSearchRowsVersion" | "setSearchCurrentIndex"> &
+  "searchRowsRef" | "searchLoadedWindowsRef" | "searchInflightWindowsRef" | "searchQueryHandleRef" |
+  "searchGenerationRef"> &
+  Pick<ReaderSearchState, "searchRowsVersion" | "searchCount" | "setSearchRowsVersion" |
+    "setSearchCurrentIndex"> &
   Pick<ReturnType<typeof useReaderSearchView>, "setSearchView">;
 
-export function useReaderSearchPanel({ searchRowsRef, searchLoadedWindowsRef, searchQueryHandleRef,
-  searchGenerationRef, searchRowsVersion, setSearchRowsVersion, setSearchView, setSearchCurrentIndex,
+export function useReaderSearchPanel({ searchRowsRef, searchLoadedWindowsRef, searchInflightWindowsRef,
+  searchQueryHandleRef, searchGenerationRef, searchRowsVersion, searchCount, setSearchRowsVersion,
+  setSearchView, setSearchCurrentIndex,
 }: ReaderSearchPanelContext) {
-  /** Loads every 128-row window that overlaps [start, end) once. */
+  /**
+   * Fills every 128-row window that overlaps [start, end). A window that was
+   * fetched while the scan had published fewer rows is fetched again once the
+   * count grows, so rows are never skipped behind a "loaded" flag.
+   */
   const ensureSearchRows = useCallback((start: number, end: number): void => {
     const handle = searchQueryHandleRef.current;
     if (!handle || end <= start) return;
@@ -194,19 +209,26 @@ export function useReaderSearchPanel({ searchRowsRef, searchLoadedWindowsRef, se
     const firstWindow = Math.max(0, Math.floor(start / SEARCH_QUERY_WINDOW));
     for (let windowIndex = firstWindow; windowIndex * SEARCH_QUERY_WINDOW < end; windowIndex++) {
       const offset = windowIndex * SEARCH_QUERY_WINDOW;
-      if (searchLoadedWindowsRef.current.has(offset)) continue;
-      searchLoadedWindowsRef.current.add(offset);
+      const wanted = Math.min(SEARCH_QUERY_WINDOW, Math.max(0, searchCount - offset));
+      const fetched = searchLoadedWindowsRef.current.get(offset) ?? 0;
+      if (wanted <= fetched || searchInflightWindowsRef.current.has(offset)) continue;
+      searchInflightWindowsRef.current.add(offset);
       void handle.window(offset, SEARCH_QUERY_WINDOW).then((rows) => {
+        searchInflightWindowsRef.current.delete(offset);
         if (generation !== searchGenerationRef.current || searchQueryHandleRef.current !== handle) return;
         rows.forEach((row, index) => searchRowsRef.current.set(offset + index, row));
+        searchLoadedWindowsRef.current.set(offset, Math.max(fetched, rows.length));
         setSearchRowsVersion((version) => version + 1);
       }).catch((error: unknown) => {
+        searchInflightWindowsRef.current.delete(offset);
         if (generation !== searchGenerationRef.current) return;
-        // Aborted windows belong to a replaced query; let a later range retry the rest.
-        if ((error as Error)?.name !== "AbortError") searchLoadedWindowsRef.current.delete(offset);
+        if ((error as Error)?.name === "AbortError") return;
+        // Keep the previous fetched count so a later range tries the rest again.
+        if (fetched === 0) searchLoadedWindowsRef.current.delete(offset);
       });
     }
-  }, [searchQueryHandleRef, searchGenerationRef, searchLoadedWindowsRef, searchRowsRef, setSearchRowsVersion]);
+  }, [searchCount, searchQueryHandleRef, searchGenerationRef, searchInflightWindowsRef,
+    searchLoadedWindowsRef, searchRowsRef, setSearchRowsVersion]);
 
   const searchPanelRowAt = useCallback((index: number): SearchPanelResult | undefined => {
     void searchRowsVersion;
