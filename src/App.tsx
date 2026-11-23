@@ -62,7 +62,8 @@ import {
   type AxisInput,
 } from "./ui/readerProgressAxis";
 import { FontSettingsPanel } from "./ui/FontSettingsPanel";
-import { SearchPanel } from "./ui/SearchPanel";
+import { SEARCH_RESULT_ROW_HEIGHT, SearchPanel } from "./ui/SearchPanel";
+import { SearchNavigationBar } from "./ui/SearchNavigationBar";
 import { useReaderSearchView, useReaderSearchState, useReaderSearchRefs,
   useReaderSearchSession, useReaderSearchQuery, useReaderSearchPanel } from "./ui/useReaderSearch";
 import { useShelfSearchMode, useLibrarySearchRuntime, useLibrarySearchBooks,
@@ -633,8 +634,9 @@ export default function App() {
 
   // ---- 当前书正文搜索（索引仅在本次打开书籍期间存在） ----
   const readerSearchState = useReaderSearchState();
-  const { searchQuery, setSearchQuery, searchResults, searchStatus, searchProgress, searchError,
-    searchNavigationBusy, setSearchNavigationBusy } = readerSearchState;
+  const { searchQuery, setSearchQuery, searchStatus, searchProgress, searchCount, searchError,
+    searchCurrentIndex, setSearchCurrentIndex, searchNavigationBusy,
+    setSearchNavigationBusy } = readerSearchState;
 
   // The panel keeps draft rules (a new rule starts with empty from/to); only the
   // stored copy and the reader snapshot are sanitized, so drafts are not dropped
@@ -895,7 +897,7 @@ export default function App() {
     view, book, server, searchView, compiledTextProjection };
   useReaderSearchSession(readerSearchContext);
   useLibrarySearchBooks({ runtime, librarySearchRuntime, shelfEntries });
-  useReaderSearchQuery({ ...readerSearchContext, searchOpen });
+  useReaderSearchQuery(readerSearchContext);
 
   const applyCount = useCallback(
     (generation: number, index: number, value: number, source: "estimated" | "measured"): boolean => {
@@ -2526,9 +2528,39 @@ export default function App() {
   };
 
   const crossBookPanelResults = useLibrarySearchResults(librarySearchSnapshot, entryByContentHashRef, libraryIndexSignature);
-  const { searchPanelResults, handleSearchViewChange, handleSearchCancel } = useReaderSearchPanel({
+  const { searchPanelRowAt, ensureSearchRows, resolveSearchIndex, handleSearchViewChange,
+    handleSearchCancel, handleSearchResume } = useReaderSearchPanel({
     ...readerSearchState, ...readerSearchRefs, setSearchView: readerSearchView.setSearchView,
   });
+  /** Result navigation shared by the panel rows and the reader-side bar. */
+  const [searchWaiting, setSearchWaiting] = useState(false);
+  const goToSearchIndex = useCallback(async (index: number): Promise<void> => {
+    if (index < 0) return;
+    if (index >= searchCount) {
+      if (searchStatus === "searching" || searchStatus === "paused") {
+        setSearchWaiting(true);
+        showReaderNotice(uiText("search.nav.waiting"), "warn");
+      }
+      return;
+    }
+    setSearchWaiting(false);
+    setSearchNavigationBusy(true);
+    try {
+      const result = await resolveSearchIndex(index);
+      if (!result) return;
+      setSearchCurrentIndex(index);
+      handleSearchNavigate(result);
+    } finally {
+      setSearchNavigationBusy(false);
+    }
+  }, [handleSearchNavigate, resolveSearchIndex, searchCount, searchStatus, setSearchCurrentIndex,
+    setSearchNavigationBusy, showReaderNotice]);
+  useEffect(() => { setSearchWaiting(false); }, [searchCount, searchQuery]);
+  const openSearchResults = useCallback((): void => {
+    const top = Math.max(0, (searchCurrentIndex ?? 0) - 3) * SEARCH_RESULT_ROW_HEIGHT;
+    readerSearchRefs.searchScrollTopRef.current = top;
+    openPanel("search");
+  }, [openPanel, readerSearchRefs.searchScrollTopRef, searchCurrentIndex]);
   const { handleStartLibraryIndex, handleCancelLibraryIndex, handleDeferLibraryIndex, handleRebuildTextIndex,
     handleClearTextIndex, handleShelfSearchModeChange, handleCorpusConcurrencyChange,
     handleLibrarySearchQueryChange } = useLibrarySearchActions({
@@ -3013,6 +3045,21 @@ export default function App() {
             )}
             {ready ? (
               <>
+                {!searchOpen && (searchStatus === "searching" || searchStatus === "paused" || searchCount > 0) && (
+                  <SearchNavigationBar
+                    count={searchCount}
+                    current={searchCurrentIndex}
+                    scanning={searchStatus === "searching" || searchStatus === "paused"}
+                    busy={searchNavigationBusy}
+                    waiting={searchWaiting || ((searchStatus === "searching" || searchStatus === "paused") &&
+                      searchCurrentIndex !== null && searchCurrentIndex >= searchCount - 1)}
+                    onPrevious={() => {
+                      if (searchCurrentIndex !== null) void goToSearchIndex(searchCurrentIndex - 1);
+                    }}
+                    onNext={() => { void goToSearchIndex((searchCurrentIndex ?? -1) + 1); }}
+                    onBackToResults={openSearchResults}
+                  />
+                )}
                 {(searchPresence.present || warming("search")) && (
                   <PanelPaintWarmup active={!searchPresence.present}>
                     <div className={`search-backdrop${!mobileChrome ? " is-docked" : ""}${searchPresence.closing ? " is-closing" : ""}`} onClick={() => closePanel("search")} />
@@ -3023,20 +3070,24 @@ export default function App() {
                       onQueryChange={setSearchQuery}
                       searchView={searchView}
                       onSearchViewChange={!isIdentityTextProjection(readerTextProjectionPreferences) ? handleSearchViewChange : undefined}
-                      results={searchPanelResults}
+                      results={[]}
+                      count={searchCount}
                       status={searchStatus}
                       processed={searchProgress.processed}
                       total={searchProgress.total}
-                      truncated={searchResults.length > 100}
                       errorMessage={searchError}
                       navigationBusy={searchNavigationBusy}
-                      onSelect={(panelResult) => {
-                        const result = searchResults.find((candidate) =>
-                          `${candidate.spineIndex}:${candidate.originalRange.start}:${candidate.originalRange.end}:${candidate.display?.range.start ?? -1}:${candidate.display?.range.end ?? -1}:${candidate.matchType}` === panelResult.id
-                        );
-                        if (result) handleSearchNavigate(result);
+                      virtual={{
+                        count: searchCount,
+                        rowAt: searchPanelRowAt,
+                        onRange: ensureSearchRows,
+                        initialScrollTop: readerSearchRefs.searchScrollTopRef.current,
+                        onScrollTop: (top) => { readerSearchRefs.searchScrollTopRef.current = top; },
+                        currentIndex: searchCurrentIndex,
                       }}
+                      onSelect={(panelResult) => { void goToSearchIndex(Number(panelResult.id)); }}
                       onCancel={handleSearchCancel}
+                      onResume={handleSearchResume}
                       onClose={() => closePanel("search")}
                     />
                   </PanelPaintWarmup>

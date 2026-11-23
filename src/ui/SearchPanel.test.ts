@@ -234,3 +234,56 @@ describe("search panel header input by layout", () => {
     } finally { await docked.dom.dispose(); }
   });
 });
+
+describe("Issue #16 / ER-0228 search panel", () => {
+  const basePanel = {
+    query: "测试关键词",
+    onQueryChange: () => undefined,
+    results: [],
+    status: "searching" as const,
+    processed: 120,
+    total: 1500,
+    onSelect: () => undefined,
+    onClose: () => undefined,
+  };
+
+  it("replaces the display/original segmented control with one switch", () => {
+    const markup = renderToStaticMarkup(createElement(SearchPanel, {
+      ...basePanel,
+      searchView: "display",
+      onSearchViewChange: () => undefined,
+    }));
+    expect(markup).toContain("search-origin-switch");
+    expect(markup).toContain("搜索原文");
+    expect(markup).not.toContain("search-view-toggle");
+    // A book without an active projection has no switch at all.
+    const plain = renderToStaticMarkup(createElement(SearchPanel, { ...basePanel }));
+    expect(plain).not.toContain("search-origin-switch");
+  });
+
+  it("renders only the visible rows of a windowed list and marks the current one", () => {
+    const virtual = {
+      count: 30000,
+      rowAt: (index: number) => ({
+        id: String(index),
+        chapterTitle: `第 ${index + 1} 条`,
+        snippet: "测试关键词",
+        matchRanges: [{ start: 0, end: 5 }],
+      }),
+      onRange: () => undefined,
+      currentIndex: 5,
+    };
+    const markup = renderToStaticMarkup(createElement(SearchPanel, {
+      ...basePanel,
+      status: "complete",
+      count: 30000,
+      virtual,
+    }));
+    expect(markup).toContain("search-results-window");
+    expect(markup).toContain("height:2520000px");
+    expect(markup).toContain("第 1 条");
+    expect(markup).toContain("is-current");
+    // The static list stays the shelf-search path.
+    expect(markup).not.toContain("search-truncated");
+  });
+});

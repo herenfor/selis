@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Segmented } from "./controls/Segmented";
 import { MENU_CLOSE_MS } from "./menuMotion";
 import { useSheetDrag } from "./sheetDrag";
 import type { KeyboardEvent } from "react";
 import { CloseIcon } from "./readerIcons";
 import { uiText, useUiText } from "./localization/UiLanguageProvider";
 
-export type SearchStatus = "idle" | "searching" | "complete" | "error";
+export type SearchStatus = "idle" | "searching" | "paused" | "complete" | "error";
 
 /** Lifecycle of the optional all-books text index. */
 export type SearchIndexStatus =
@@ -62,11 +61,16 @@ export interface SearchPanelProps {
   status: SearchStatus;
   processed: number;
   total: number;
+  /** Published hit count: grows while scanning, final only when complete. */
+  count?: number;
   truncated?: boolean;
+  /** Windowed result list: the panel renders only visible rows and asks for ranges. */
+  virtual?: SearchVirtualList;
   errorMessage?: string;
   onSelect(result: SearchPanelResult): void;
   onClose(): void;
   onCancel?(): void;
+  onResume?(): void;
   navigationBusy?: boolean;
   /** Display text vs canonical original text of the current book. */
   searchView?: "display" | "original";
@@ -88,6 +92,19 @@ export interface SearchPanelProps {
   onConcurrencyChange?(mode: "automatic" | "manual", value?: number): void;
   /** Desktop: docked on the right so the book stays visible; no dragging, no grip. */
   docked?: boolean;
+}
+
+/** Rows rendered per scroll pass; the spacer keeps the real scroll range. */
+export const SEARCH_RESULT_ROW_HEIGHT = 84;
+
+export interface SearchVirtualList {
+  count: number;
+  rowAt(index: number): SearchPanelResult | undefined;
+  /** Called with the half-open index range that is about to be visible. */
+  onRange(start: number, end: number): void;
+  initialScrollTop?: number;
+  onScrollTop?(top: number): void;
+  currentIndex?: number | null;
 }
 
 /** Keep a large result set from creating an equally large DOM tree. */
@@ -141,6 +158,7 @@ export function getSearchStatusLabel(status: SearchStatus, processed: number, to
     const safeTotal = Math.max(0, total);
     return uiText("search.status.searching", { processed: Math.max(0, processed), total: safeTotal });
   }
+  if (status === "paused") return uiText("search.status.paused");
   if (status === "complete") return uiText("search.status.complete");
   if (status === "error") return uiText("search.status.error");
   return "";
@@ -410,6 +428,95 @@ export function SearchIndexCard({ props }: { props: SearchPanelProps }) {
 }
 
 /** Shared bounded result presentation used by reader and shelf search surfaces. */
+function resultRowContent(result: SearchPanelResult) {
+  return <>
+    {result.bookTitle && <span className="search-result-book">{result.bookTitle}{result.creator ? ` · ${result.creator}` : ""}</span>}
+    <span className="search-result-chapter">{result.chapterTitle}</span>
+    <span className="search-result-snippet">
+      {resultSegments(result).map((segment, index) => segment.highlighted
+        ? <mark key={`${result.id}-match-${index}`}>{segment.text}</mark>
+        : <span key={`${result.id}-text-${index}`}>{segment.text}</span>)}
+    </span>
+  </>;
+}
+
+/**
+ * Windowed result list: only the visible slice is rendered, so a query with
+ * tens of thousands of hits stays a constant-size DOM. The spacer keeps the
+ * scrollbar range identical to the published count.
+ */
+export function SearchResultWindowList({ virtual, navigationBusy = false, onSelect }: {
+  virtual: SearchVirtualList;
+  navigationBusy?: boolean;
+  onSelect(result: SearchPanelResult): void;
+}) {
+  const { t } = useUiText();
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(virtual.initialScrollTop ?? 0);
+  const [viewport, setViewport] = useState(420);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    const element = listRef.current;
+    if (!element) return;
+    if (!restoredRef.current) {
+      restoredRef.current = true;
+      if (virtual.initialScrollTop) element.scrollTop = virtual.initialScrollTop;
+      setViewport(element.clientHeight || 420);
+    }
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setViewport(element.clientHeight || 420));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [virtual.initialScrollTop]);
+
+  const first = Math.max(0, Math.floor(scrollTop / SEARCH_RESULT_ROW_HEIGHT) - 4);
+  const last = Math.min(virtual.count, first + Math.ceil(viewport / SEARCH_RESULT_ROW_HEIGHT) + 8);
+  const onRangeRef = useRef(virtual.onRange);
+  onRangeRef.current = virtual.onRange;
+
+  useEffect(() => {
+    if (last > first) onRangeRef.current(first, last);
+  }, [first, last]);
+
+  const rows: Array<{ index: number; row?: SearchPanelResult }> = [];
+  for (let index = first; index < last; index++) rows.push({ index, row: virtual.rowAt(index) });
+
+  return (
+    <div
+      ref={listRef}
+      className="search-results search-results-window"
+      role="list"
+      aria-label={t("search.results")}
+      onScroll={(event) => {
+        const top = event.currentTarget.scrollTop;
+        setScrollTop(top);
+        virtual.onScrollTop?.(top);
+      }}
+    >
+      <div className="search-results-spacer" style={{ height: virtual.count * SEARCH_RESULT_ROW_HEIGHT }}>
+        {rows.map(({ index, row }) => (
+          row
+            ? <button
+                key={row.id}
+                type="button"
+                role="listitem"
+                className={`search-result is-window${virtual.currentIndex === index ? " is-current" : ""}`}
+                style={{ top: index * SEARCH_RESULT_ROW_HEIGHT }}
+                disabled={navigationBusy || Boolean(row.disabledReason)}
+                onClick={() => onSelect(row)}
+                title={row.disabledReason ?? row.chapterPath ?? row.chapterTitle}
+              >
+                {resultRowContent(row)}
+              </button>
+            : <div key={`placeholder-${index}`} className="search-result is-window is-placeholder"
+                style={{ top: index * SEARCH_RESULT_ROW_HEIGHT }} aria-hidden="true" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SearchResultList({
   results,
   navigationBusy = false,
@@ -451,10 +558,16 @@ export function SearchResultList({
 export function SearchPanel(props: SearchPanelProps) {
   const { t, tn } = useUiText();
   const inputRef = useRef<HTMLInputElement>(null);
+  // IME: the query only leaves the panel when the composition is committed;
+  // typing pinyin/jyutping must not start a search on every intermediate string.
+  const composingRef = useRef(false);
+  const [draft, setDraft] = useState(props.query);
+  useEffect(() => { setDraft(props.query); }, [props.query]);
   const rendered = limitSearchResults(props.results);
   const statusLabel = props.statusMessage ?? getSearchStatusLabel(props.status, props.processed, props.total);
   const hasQuery = props.query.trim().length > 0;
-  const showEmpty = props.status === "complete" && hasQuery && props.results.length === 0;
+  const showEmpty = props.status === "complete" && hasQuery &&
+    (props.virtual ? props.virtual.count : props.results.length) === 0;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -573,9 +686,13 @@ export function SearchPanel(props: SearchPanelProps) {
         >
           <div className="drawer-title-wrap">
             <span className="search-title">{t("search.title")}</span>
-            {props.status === "complete" && hasQuery && (
+            {hasQuery && (props.status === "complete" || (props.count ?? 0) > 0) && (
               <span className="search-count-badge">
-                {props.results.length > 0 ? tn("search.count", props.results.length, { count: props.results.length }) : t("search.none")}
+                {(props.count ?? 0) > 0
+                  ? props.status === "searching" || props.status === "paused"
+                    ? t("search.count.progress", { count: props.count ?? 0 })
+                    : tn("search.count", props.count ?? 0, { count: props.count ?? 0 })
+                  : t("search.none")}
               </span>
             )}
           </div>
@@ -584,20 +701,30 @@ export function SearchPanel(props: SearchPanelProps) {
           </button>
         </div>
         {props.onSearchViewChange && (
-          <Segmented label={t("search.view")} value={props.searchView ?? "display"} variant="fill" className="search-view-toggle"
-            options={[
-              { value: "display", label: t("search.view.display") },
-              { value: "original", label: t("search.view.original") },
-            ]}
-            onChange={(view) => props.onSearchViewChange?.(view)} />
+          <label className="search-origin-switch">
+            <input
+              type="checkbox"
+              checked={props.searchView === "original"}
+              onChange={(event) => props.onSearchViewChange?.(event.target.checked ? "original" : "display")}
+            />
+            <span>{t("search.view.originalSwitch")}</span>
+          </label>
         )}
         <div className="search-input-wrap">
           <input
             ref={inputRef}
             className="search-input"
             type="search"
-            value={props.query}
-            onChange={(event) => props.onQueryChange(event.target.value)}
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              if (!composingRef.current) props.onQueryChange(event.target.value);
+            }}
+            onCompositionStart={() => { composingRef.current = true; }}
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              props.onQueryChange(event.currentTarget.value);
+            }}
             placeholder={t("search.placeholder.current")}
             aria-label={t("search.placeholder.current")}
           />
@@ -605,7 +732,7 @@ export function SearchPanel(props: SearchPanelProps) {
             <button
               className="search-clear"
               type="button"
-              onClick={() => props.onQueryChange("")}
+              onClick={() => { setDraft(""); props.onQueryChange(""); }}
               aria-label={t("search.clear")}
             >
               ×
@@ -617,6 +744,9 @@ export function SearchPanel(props: SearchPanelProps) {
           {props.status === "searching" && props.onCancel && (
             <button className="search-cancel" type="button" onClick={props.onCancel}>{t("search.cancel")}</button>
           )}
+          {props.status === "paused" && props.onResume && (
+            <button className="search-cancel" type="button" onClick={props.onResume}>{t("search.resume")}</button>
+          )}
           {props.status === "error" && props.errorMessage && <span className="search-error">{t("search.errorDetail", { message: props.errorMessage })}</span>}
         </div>
         {!hasQuery && props.status !== "searching" && (
@@ -626,8 +756,12 @@ export function SearchPanel(props: SearchPanelProps) {
         )}
         {showEmpty && <div className="search-empty">{t("search.empty")}</div>}
         {props.navigationBusy && <div className="search-navigation-busy">{t("search.locating")}</div>}
-        <SearchResultList results={props.results} navigationBusy={props.navigationBusy} onSelect={props.onSelect} />
-        {props.truncated && !rendered.limited && <div className="search-truncated">{t("search.truncated", { limit: SEARCH_RESULT_RENDER_LIMIT })}</div>}
+        {props.virtual
+          ? <SearchResultWindowList virtual={props.virtual} navigationBusy={props.navigationBusy} onSelect={props.onSelect} />
+          : <>
+              <SearchResultList results={props.results} navigationBusy={props.navigationBusy} onSelect={props.onSelect} />
+              {props.truncated && !rendered.limited && <div className="search-truncated">{t("search.truncated", { limit: SEARCH_RESULT_RENDER_LIMIT })}</div>}
+            </>}
       </div>
     </>
   );
