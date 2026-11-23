@@ -215,13 +215,14 @@ describe("Zen UI SidebarDrawer 组件与交互契约（Packet B）", () => {
     expect(shared).toContain("分享");
   });
 
-  it("三个页签都隐藏滚动条但保留可滚动容器", () => {
+  it("三个页签保留可滚动容器和可见滚动条（Issue #16）", () => {
     const html = renderToStaticMarkup(
       createElement(SidebarDrawer, { ...baseProps })
     );
-    expect(html).toContain("sidebar-pane sidebar-toc-pane scrollbar-hidden");
-    expect(html).toContain("sidebar-pane sidebar-bookmarks-pane scrollbar-hidden");
-    expect(html).toContain("sidebar-pane sidebar-notes-pane scrollbar-hidden");
+    expect(html).toContain("sidebar-pane sidebar-toc-pane");
+    expect(html).toContain("sidebar-pane sidebar-bookmarks-pane");
+    expect(html).toContain("sidebar-pane sidebar-notes-pane");
+    expect(html).not.toContain("scrollbar-hidden");
   });
 
   it("宽屏停靠时提供可访问的宽度拖拽手柄，自动收起保留离场类", () => {

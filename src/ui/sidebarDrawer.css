@@ -319,14 +319,18 @@
   overflow-x: hidden;
   overscroll-behavior: none;
   padding: 8px 0;
-  /* The top/bottom edge fade is the only "more content" hint; the 5px
-     scrollbar used to sit on top of it. Keep wheel, touch and keyboard
-     scrolling. */
-  scrollbar-width: none;
 }
 
+/* A thin scrollbar stays visible in the panes: the edge fade alone made long
+   TOCs hard to scrub quickly (Issue #16). Wheel, touch and keyboard scrolling
+   are unchanged. */
 .sidebar-pane::-webkit-scrollbar {
-  display: none;
+  width: 5px;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+  border-radius: var(--r-xs);
 }
 
 .sidebar-pane > * { flex-shrink: 0; }

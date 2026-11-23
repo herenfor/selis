@@ -504,7 +504,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
         <div className="sidebar-body" ref={viewportRef}>
           <div className="sidebar-track" ref={trackRef}>
           {/* TAB 1: 目录 */}
-            <div className="sidebar-pane sidebar-toc-pane scrollbar-hidden" {...paneProps("toc")}>
+            <div className="sidebar-pane sidebar-toc-pane" {...paneProps("toc")}>
               {tocCount > 8 && (
                 <div className="sidebar-toc-filter-wrap">
                   <input
@@ -552,7 +552,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
 
 
           {/* TAB 2: 书签 */}
-            <div className="sidebar-pane sidebar-bookmarks-pane scrollbar-hidden" {...paneProps("bookmarks")}>
+            <div className="sidebar-pane sidebar-bookmarks-pane" {...paneProps("bookmarks")}>
               {bookmarks.length === 0 ? (
                 <div className="sidebar-empty">
                   <span>{t("sidebar.bookmarks.empty")}</span>
@@ -604,7 +604,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
 
 
           {/* TAB 3: 笔记 */}
-            <div className="sidebar-pane sidebar-notes-pane scrollbar-hidden" {...paneProps("notes")}>
+            <div className="sidebar-pane sidebar-notes-pane" {...paneProps("notes")}>
               {showBin ? (
                 <div className="sidebar-notes-bin">
                   <div className="sidebar-notes-bin-head">
