@@ -4,7 +4,7 @@ import { parseChapterDocument, STRIPPED_CHAPTER_TAGS } from "./chapterDocument";
 import { resolvePath, isExternalUrl, isFragmentOnly } from "../core/paths";
 import { hasAuthoredCssProperty, rewriteCssInlineWidths, rewriteCssUrls } from "./cssRewrite";
 import { isFullPageImage, linkedImagePage } from "./fullPageImage";
-import { findMultiImageGroups, hasCollageAuthorCss, multiImageGroupCss } from "./imageGroup";
+import { findMultiImageGroups, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
 import { childElements, localNameOf } from "../core/xml";
 import { imageLayoutPolicy, scrollMediaDefaultsCss } from "./imageLayoutPolicy";
 import { buildThemeCss } from "./readerTheme";
@@ -562,7 +562,7 @@ export async function sanitizeChapter(
       ? []
       : findMultiImageGroups(viewer, {
           chapterHasText: bodyText.length > 0,
-          authorCollageCss: hasCollageAuthorCss(authorCssTexts),
+          authorRules: parseAuthorCss(authorCssTexts),
         });
   for (const group of multiImageGroups) {
     (group.element as unknown as Element).setAttribute("data-reader-image-group", "duokan");

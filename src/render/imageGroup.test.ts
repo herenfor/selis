@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseHTML } from "linkedom";
-import { findMultiImageGroups, hasCollageAuthorCss, multiImageGroupCss } from "./imageGroup";
+import { findMultiImageGroups, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
 
 function groups(
   bodyHtml: string,
-  options: { chapterHasText?: boolean; authorCollageCss?: boolean } = {},
+  options: { chapterHasText?: boolean; authorCss?: readonly string[] } = {},
 ) {
   const { document } = parseHTML(
     `<html><body><epub-viewer id="epub-viewer">${bodyHtml}</epub-viewer></body></html>`,
@@ -13,7 +13,7 @@ function groups(
   if (!viewer) throw new Error("viewer missing");
   return findMultiImageGroups(viewer, {
     chapterHasText: options.chapterHasText ?? false,
-    authorCollageCss: options.authorCollageCss ?? false,
+    authorRules: parseAuthorCss(options.authorCss ?? []),
   });
 }
 
@@ -63,33 +63,47 @@ describe("findMultiImageGroups", () => {
     expect(groups(`<div class="duokan-image-single"><img src="a.png" width="300"/><img src="b.png"/></div>`)).toHaveLength(0);
     expect(groups(`<div class="duokan-image-single"><img src="a.png" style="width:50%"/><img src="b.png"/></div>`)).toHaveLength(0);
     expect(groups(`<div class="duokan-image-single"><img src="a.png" style="height:20em"/><img src="b.png"/></div>`)).toHaveLength(0);
-    expect(groups(`<div class="duokan-image-single" style="width:50%">${two}</div>`)).toHaveLength(0);
     expect(groups(`<div class="duokan-image-single" style="display:flex">${two}</div>`)).toHaveLength(0);
+    // A narrower container does not arrange the pictures; its width is kept.
+    expect(groups(`<div class="duokan-image-single" style="width:50%">${two}</div>`)).toHaveLength(1);
     // Fluid declarations follow the reader's page instead of pinning a size.
     expect(groups(`<div class="duokan-image-single" style="width:100%"><img src="a.png" style="width:100%"/><img src="b.png"/></div>`)).toHaveLength(1);
   });
 
-  it("keeps groups alone when the author stylesheet asks for a row layout", () => {
-    expect(groups(`<div class="duokan-image-single">${two}</div>`, { authorCollageCss: true })).toHaveLength(0);
+  it("keeps groups alone when a matching author rule asks for a row layout", () => {
+    expect(groups(`<div class="duokan-image-single">${two}</div>`, { authorCss: [".duokan-image-single { display: flex; }"] })).toHaveLength(0);
   });
 });
 
-describe("hasCollageAuthorCss", () => {
-  it("recognises authored row/grid/sized layouts", () => {
-    expect(hasCollageAuthorCss([".duokan-image-single img { width: 50% }"])).toBe(true);
-    expect(hasCollageAuthorCss([".illus { display: flex; }"])).toBe(true);
-    expect(hasCollageAuthorCss([".illus img { float: left }"])).toBe(true);
-    expect(hasCollageAuthorCss(["img { width: 50% }"])).toBe(true);
-    expect(hasCollageAuthorCss(["@media (min-width: 600px) { .duokan-image-single { display: grid } }"])).toBe(true);
+describe("parseAuthorCss + selector matching", () => {
+  const sized = `<div class="duokan-image-single"><img class="half" src="a.png"/><img class="half" src="b.png"/></div>`;
+
+  it("honours an authored class-based picture size (img.half { width: 49% })", () => {
+    expect(groups(sized, { authorCss: ["img.half { width: 49%; }"] })).toHaveLength(0);
   });
 
-  it("ignores ordinary template rules and the reader's own fluid defaults", () => {
-    expect(hasCollageAuthorCss([".duokan-image-single { margin: 1em 0; text-align: center; }"])).toBe(false);
-    expect(hasCollageAuthorCss([".illus { text-indent: 0em; text-align: center; }"])).toBe(false);
-    expect(hasCollageAuthorCss(["img { max-width: 100%; }"])).toBe(false);
-    expect(hasCollageAuthorCss([".duokan-image-single { width: 100%; display: block; }"])).toBe(false);
-    expect(hasCollageAuthorCss([".my-illus { display: flex }"])).toBe(false);
-    expect(hasCollageAuthorCss(["/* .illus { display: flex } */"])).toBe(false);
+  it("honours a class rule on the container itself", () => {
+    expect(groups(`<div class="illus duokan-image-single">${two}</div>`, {
+      authorCss: [".duokan-image-single.halfpage img { width: 49%; }", ".illus.halfpage { display: grid; }"],
+    })).toHaveLength(1);
+  });
+
+  it("ignores collage rules whose ancestor does not match this container", () => {
+    expect(groups(`<div class="duokan-image-single">${two}</div>`, {
+      authorCss: [".gallery .illus { display: grid; }"],
+    })).toHaveLength(1);
+  });
+
+  it("still converts when only the reader's own .illus default could be mistaken for a collage", () => {
+    expect(groups(`<div class="illus duokan-image-single">${two}</div>`, {
+      authorCss: [".illus { text-indent: 0em; text-align: center; }", "img { max-width: 100%; }"],
+    })).toHaveLength(1);
+  });
+
+  it("ignores comments and fluid declarations", () => {
+    expect(groups(`<div class="duokan-image-single">${two}</div>`, {
+      authorCss: ["/* .duokan-image-single { display: flex } */ .duokan-image-single { width: 100%; }"],
+    })).toHaveLength(1);
   });
 });
 
