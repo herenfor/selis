@@ -1202,3 +1202,107 @@ background-position:center center;background-size:cover;background-color:#f9ebdf
     expect(out).toContain('src: url("blob:title-font")');
   });
 });
+
+describe("Issue #15 多看单图容器内多图组", () => {
+  const two = `<img alt="" src="a.png"/><img alt="" src="b.png"/>`;
+
+  it("纯图章的多图容器被标记，并注入每图一栏的布局", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="duokan-image-single">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+
+    expect(out).toContain('data-reader-image-group="duokan"');
+    const css = readStyleText(out, "multi-image-groups");
+    expect(css).toContain("height: var(--reader-page-height, 100%) !important");
+    expect(css).toContain("break-after: column");
+    expect(css).toContain(":not([data-reader-vertical])");
+    // 整章仍不是单图整页：不能把 viewer 标成 fullpage-image。
+    expect(out).not.toContain('class="fullpage-image"');
+    expect(out).not.toContain("data-reader-image-pages");
+    // 两张图仍保留原节点与顺序。
+    expect(out.indexOf("a.png")).toBeGreaterThan(-1);
+    expect(out.indexOf("a.png")).toBeLessThan(out.indexOf("b.png"));
+  });
+
+  it("带 .illus 的纯图章同样标记", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="illus duokan-image-single">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+    expect(out).toContain('data-reader-image-group="duokan"');
+    expect(readStyleText(out, "multi-image-groups")).not.toBe("");
+  });
+
+  it("混排章节只标记 .illus 多图块，普通正文组图保持原排版", async () => {
+    const plain = `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>正文</p><div class="duokan-image-single">${two}</div></body></html>`;
+    const plainOut = await sanitizeChapter(plain, opts());
+    expect(plainOut.html).not.toContain("data-reader-image-group");
+    expect(readStyleText(plainOut.html, "multi-image-groups")).toBe("");
+
+    const illus = `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>正文</p><div class="illus duokan-image-single">${two}</div><p>后文</p></body></html>`;
+    const illusOut = await sanitizeChapter(illus, opts());
+    expect(illusOut.html).toContain('data-reader-image-group="duokan"');
+    expect(illusOut.html).toContain("后文");
+  });
+
+  it("图注、链接、固定尺寸与作者拼图保持原结构", async () => {
+    const cases: Array<[string, string]> = [
+      ["图注", `<div class="duokan-image-single">${two}<p>图 1</p></div>`],
+      ["块内链接", `<div class="duokan-image-single"><a href="x.xhtml">${two}</a></div>`],
+      ["外层链接", `<a href="x.xhtml"><div class="duokan-image-single">${two}</div></a>`],
+      ["固定宽度", `<div class="duokan-image-single"><img src="a.png" width="300"/><img src="b.png"/></div>`],
+      ["内联 50%", `<div class="duokan-image-single"><img src="a.png" style="width:50%"/><img src="b.png"/></div>`],
+      ["容器 50%", `<div class="duokan-image-single" style="width:50%">${two}</div>`],
+    ];
+    for (const [name, body] of cases) {
+      const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`;
+      const { html: out } = await sanitizeChapter(html, opts());
+      expect(out, name).not.toContain("data-reader-image-group");
+      expect(readStyleText(out, "multi-image-groups"), name).toBe("");
+    }
+  });
+
+  it("作者样式表声明 50% 双图时不转换", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head>
+<style>.duokan-image-single img { width: 50%; }</style>
+</head><body><div class="duokan-image-single">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+    expect(out).not.toContain("data-reader-image-group");
+    expect(readStyleText(out, "multi-image-groups")).toBe("");
+  });
+
+  it("滚动模式不标记也不注入（保留作者自然流动）", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="duokan-image-single">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, {
+      ...opts(),
+      settings: { ...DEFAULT_SETTINGS, readingMode: "scroll" },
+    });
+    expect(out).not.toContain("data-reader-image-group");
+    expect(readStyleText(out, "multi-image-groups")).toBe("");
+  });
+
+  it("固定版式不标记", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="duokan-image-single">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, { ...opts(), fixedLayout: true });
+    expect(out).not.toContain("data-reader-image-group");
+    expect(readStyleText(out, "multi-image-groups")).toBe("");
+  });
+
+  it("多图组样式排在阅读器 overrides 之后、用户 CSS 之前", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="duokan-image-single">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, {
+      ...opts(),
+      settings: { ...DEFAULT_SETTINGS, customCss: ".user-rule{color:red}" },
+    });
+    const overrides = out.indexOf('data-reader="overrides"');
+    const groups = out.indexOf('data-reader="multi-image-groups"');
+    const user = out.indexOf('data-reader="user-css"');
+    expect(overrides).toBeGreaterThan(-1);
+    expect(groups).toBeGreaterThan(overrides);
+    expect(user).toBeGreaterThan(groups);
+  });
+
+  it("单图容器仍走原 fullpage-image 路径", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="duokan-image-single"><img alt="" src="a.png"/></div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+    expect(out).toContain('class="fullpage-image"');
+    expect(out).not.toContain("data-reader-image-group");
+  });
+});

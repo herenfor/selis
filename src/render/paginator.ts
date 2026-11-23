@@ -1576,6 +1576,7 @@ export class ChapterPaginator {
         },
         makeUrl: (text, mediaType) =>
           ownedCssUrls.add(URL.createObjectURL(new Blob([text], { type: mediaType }))),
+        fixedLayout: this.fixedLayout,
         settings: this.settings,
       });
     } catch (e) {
@@ -2167,6 +2168,14 @@ export class ChapterPaginator {
       viewer.style.setProperty?.("--reader-fill-height", `${Math.max(0, h - padTop - padBottom - 2 * bleed)}px`);
     } else {
       viewer.style.removeProperty?.("--reader-fill-height");
+    }
+    // 多图组（Issue #15）每张图占一栏：图高要等于栏内容高，才能整页 contain
+    // 且不被拆栏。分页栏高就是 viewer 的 border-box 高扣掉上下 padding；
+    // 滚动模式不注入该规则，也不写这个变量。
+    if (!scrollMode && h > 0) {
+      viewer.style.setProperty?.("--reader-page-height", `${Math.max(0, h - padTop - padBottom)}px`);
+    } else {
+      viewer.style.removeProperty?.("--reader-page-height");
     }
     // 同步回流一次，确保 scrollWidth 反映新布局
     void viewer.scrollWidth;

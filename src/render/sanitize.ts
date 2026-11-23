@@ -4,6 +4,7 @@ import { parseChapterDocument, STRIPPED_CHAPTER_TAGS } from "./chapterDocument";
 import { resolvePath, isExternalUrl, isFragmentOnly } from "../core/paths";
 import { hasAuthoredCssProperty, rewriteCssInlineWidths, rewriteCssUrls } from "./cssRewrite";
 import { isFullPageImage, linkedImagePage } from "./fullPageImage";
+import { findMultiImageGroups, hasCollageAuthorCss, multiImageGroupCss } from "./imageGroup";
 import { childElements, localNameOf } from "../core/xml";
 import { imageLayoutPolicy, scrollMediaDefaultsCss } from "./imageLayoutPolicy";
 import { buildThemeCss } from "./readerTheme";
@@ -24,6 +25,8 @@ export interface SanitizeOptions {
   makeUrl?: (text: string, mediaType: string) => string;
   /** Optional per-book cache. The caller owns/releases the returned shared lease. */
   stylesheetFor?: (path: string) => { url: string; unresolvedResources: readonly string[] } | undefined;
+  /** 固定版式由原 viewport 分页，不参与 Issue #15 的多图组整页化。 */
+  fixedLayout?: boolean;
   settings: ReaderSettings;
 }
 
@@ -461,12 +464,17 @@ export async function sanitizeChapter(
   }
 
   // 4) 样式表：内容改写（@import/url() → blob）+ href 指向新 blob；缺失则移除
+  // 作者样式原文同时留给 Issue #15 的多图组判定：只有作者自己写的行/网格
+  // 布局才算拼图意图，阅读器随后注入的 .illus 规则不能参与这次判定。
+  const authorCssTexts: string[] = [];
   for (const link of Array.from(doc.getElementsByTagName("link"))) {
     const rel = (link.getAttribute("rel") ?? "").toLowerCase();
     if (rel.includes("stylesheet")) {
       const href = link.getAttribute("href");
       if (href && !isExternalUrl(href)) {
         const cssPath = opts.archiveReferences ? resolveArchiveHref(opts.archiveReferences, opts.basePath, href).path : resolvePath(opts.basePath, href);
+        const cssText = opts.getText?.(cssPath);
+        if (cssText !== undefined) authorCssTexts.push(cssText);
         const shared = opts.stylesheetFor?.(cssPath);
         if (shared) {
           link.setAttribute("href", shared.url);
@@ -474,7 +482,6 @@ export async function sanitizeChapter(
           continue;
         }
         // 优先：读取 CSS 内容并改写其内部引用（@font-face/background/@import 相对路径）
-        const cssText = opts.getText?.(cssPath);
         if (cssText !== undefined && opts.makeUrl) {
           const rewritten = rewriteCssUrls(cssText, cssPath, urlFor, {
             getText: opts.getText,
@@ -499,6 +506,7 @@ export async function sanitizeChapter(
   for (const stEl of Array.from(doc.getElementsByTagName("style"))) {
     const text = stEl.textContent;
     if (text) {
+      authorCssTexts.push(text);
       const rewritten = rewriteCssUrls(text, opts.basePath, urlFor, { archiveReferences: opts.archiveReferences });
       while (stEl.firstChild) stEl.removeChild(stEl.firstChild);
       stEl.appendChild(doc.createTextNode(rewritten));
@@ -543,6 +551,21 @@ export async function sanitizeChapter(
     const child = c as Element;
     const cls = child.getAttribute("class");
     child.setAttribute("class", cls ? `${cls} reader-top` : "reader-top");
+  }
+
+  // 5.05) 多看单图容器内的多图组（Issue #15）：只标记候选，分页时每图一页。
+  // 在 5.4 宽度改写之前判定，保留作者原始的 width:100% 语义；固定版式与
+  // 滚动不参与，作者拼图/图注/链接/封面彩页的排除见 imageGroup.ts。
+  const bodyText = (bodyEl.textContent ?? "").trim();
+  const multiImageGroups =
+    opts.fixedLayout === true || opts.settings.readingMode === "scroll"
+      ? []
+      : findMultiImageGroups(viewer, {
+          chapterHasText: bodyText.length > 0,
+          authorCollageCss: hasCollageAuthorCss(authorCssTexts),
+        });
+  for (const group of multiImageGroups) {
+    (group.element as unknown as Element).setAttribute("data-reader-image-group", "duokan");
   }
 
   // 5.4) 宽度百分比改写：书里的 width:X% 是按“页面≈版心”的阅读器写的，
@@ -609,7 +632,6 @@ export async function sanitizeChapter(
   // 普通 img 仍只在没有自带固定尺寸约束时整页填充（`width:100%` 属于流体
   // 声明，不算限宽）；多图页、限宽 title 图按书自身排版，否则会把一页拆成
   // 两页 / 把限宽图放大到全屏。
-  const bodyText = (bodyEl.textContent ?? "").trim();
   const paginatedFillEligible = isFullPageImage(viewer, bodyText);
   const imagePageChildren = childElements(viewer);
   if (opts.settings.readingMode !== "scroll") {
@@ -814,6 +836,16 @@ ${VIEWER_TAG}#${VIEWER_ID}::-webkit-scrollbar {
   styleEl.setAttribute("data-reader", "overrides");
   styleEl.textContent = buildOverrideCss(opts.settings);
   head.appendChild(styleEl);
+
+  // 多图组布局必须排在 overrides 之后：`.illus` 的 flex/100% 规则就在
+  // overrides 里，同特异性下后写的 block/auto 才能生效；用户自定义 CSS
+  // 仍在其后，可继续覆盖。滚动模式不注入（标记也不会产生）。
+  if (multiImageGroups.length > 0) {
+    const groupStyleEl = doc.createElement("style");
+    groupStyleEl.setAttribute("data-reader", "multi-image-groups");
+    groupStyleEl.textContent = multiImageGroupCss(VIEWER_ID);
+    head.appendChild(groupStyleEl);
+  }
 
   const themeStyleEl = doc.createElement("style");
   themeStyleEl.setAttribute("data-reader", "theme");
