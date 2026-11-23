@@ -551,6 +551,7 @@ export async function loadBookSelectiveWithArchive(
       drmProtected: false,
       ensureResources,
       readResource,
+      scanChapters: archiveClient.scanChapters?.bind(archiveClient),
       archive: { close: () => archiveClient.close() },
     };
   } catch (err) {

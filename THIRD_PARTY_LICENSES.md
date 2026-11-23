@@ -40,6 +40,9 @@ Each component remains subject to its respective license.
 | subtle | 2.6.1 | BSD-3-Clause | https://github.com/dalek-cryptography/subtle |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom |
 | quick-xml | 0.41.0 | MIT | https://github.com/tafia/quick-xml |
+| roxmltree (reader search) | 0.21.2 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/roxmltree |
+| memchr (reader search) | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr |
+| icu_normalizer (reader search) | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | encoding_rs (TXT decoding) | 0.8.44 | Apache-2.0 OR MIT OR BSD-3-Clause | https://github.com/hsivonen/encoding_rs |
 | chardetng (TXT encoding detection) | 0.1.17 | Apache-2.0 OR MIT | https://github.com/hsivonen/chardetng |
 | tempfile (anonymous TXT reading resources) | 3.27.0 | MIT OR Apache-2.0 | https://github.com/Stebalien/tempfile |

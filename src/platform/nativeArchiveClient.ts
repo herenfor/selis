@@ -1,3 +1,4 @@
+import type { ScanChapters, ScannedChapter } from "../core/readerSearchSource";
 /** Native Android archive session client used by the reader and corpus Worker. */
 import {
   ArchiveClosedError,
@@ -41,10 +42,12 @@ export async function createNativeArchiveClient(
   invoke: ArchiveInvoke,
   signal?: AbortSignal,
   textEncoding?: string,
+  readerSearch = false,
 ): Promise<ArchiveClient> {
   if (signal?.aborted) throw new ArchiveClosedError();
   const info = await invoke<OpenInfo>("linked_library_archive_open", { contentHash, ...(textEncoding ? { textEncoding } : {}) });
   const client = new NativeArchiveClient(info, invoke, signal);
+  if (readerSearch) client.scanChapters = client.scan.bind(client);
   try {
     if (info.protocolVersion !== 1 || info.chunkBytes !== CHUNK_BYTES) {
       throw new Error("原生归档协议不匹配");
@@ -163,6 +166,38 @@ class NativeArchiveClient implements ArchiveClient {
       }
       start = end;
     } while (true);
+  }
+
+  scanChapters?: ScanChapters;
+
+  async scan(paths: readonly string[], phrase: string, tokens: string[], signal?: AbortSignal): Promise<ScannedChapter[]> {
+    const results: ScannedChapter[] = paths.map(() => ({ kind: "compatibility" }));
+    const jobs = paths.flatMap((path, position) => {
+      const entry = this.directory.get(path);
+      return entry && entry.expandedBytes < CHUNK_BYTES ? [{ entry, position }] : [];
+    });
+    // Join the same entry queue as reading/preloading. Never interrupt a partially read ZIP entry.
+    for (let start = 0; start < jobs.length;) {
+      let end = start, bytes = 0;
+      do { bytes += jobs[end++].entry.expandedBytes; }
+      while (end < jobs.length && end - start < 32 && bytes + jobs[end].entry.expandedBytes <= CHUNK_BYTES);
+      const batch = jobs.slice(start, end);
+      const task = this.tail.then(async () => {
+        this.requireOpen();
+        checkEntryRead(signal);
+        const rows = await this.invoke<ScannedChapter[]>("reader_search_batch", {
+          sessionId: this.info.sessionId, indices: batch.map(job => job.entry.entryIndex), phrase, tokens,
+        });
+        this.requireOpen();
+        checkEntryRead(signal);
+        if (rows.length !== batch.length) throw new Error("书内搜索批次不完整");
+        batch.forEach((job, i) => { results[job.position] = rows[i]; });
+      });
+      this.tail = task.then(() => undefined, () => undefined);
+      await Promise.race([task, this.shutdown]);
+      start = end;
+    }
+    return results;
   }
 
   private readEntry(path: string, signal?: AbortSignal): Promise<Uint8Array> {

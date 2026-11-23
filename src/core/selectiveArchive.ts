@@ -1,3 +1,4 @@
+import type { ScanChapters } from "./readerSearchSource";
 import { unzipSync, strFromU8 } from "fflate";
 
 export class ArchiveClosedError extends Error {
@@ -87,6 +88,7 @@ export function takeArchiveBatch(
 }
 
 export interface ArchiveClient {
+  scanChapters?: ScanChapters;
   readonly openTimings?: { verifyMs: number; directoryMs: number; directoryTransferMs: number };
   readonly directory: ReadonlyMap<string, ArchiveEntry>;
   extract(paths: readonly string[], signal?: AbortSignal): Promise<Map<string, Uint8Array>>;

@@ -81,6 +81,7 @@ function baseBook(title: string): Book {
     return { version: 3, opfPath: "reader-document", metadata: { title, creator: "", language: "", identifier: "" }, manifest: new Map(), spine: [], guide: [], toc: [], resources: new Map(), fixedLayout: false, issues: [], drmProtected: false };
 }
 function installArchiveResources(book: Book, archive: ArchiveClient): void {
+    book.scanChapters = archive.scanChapters?.bind(archive);
     let closed = false;
     book.archive = { close() { if (closed)
             return; closed = true; archive.close(); } };

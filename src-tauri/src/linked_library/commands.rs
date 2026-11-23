@@ -346,6 +346,23 @@ pub async fn linked_library_archive_read(
 }
 
 #[tauri::command]
+pub async fn reader_search_batch(
+    app: AppHandle,
+    window: tauri::Window,
+    session_id: String,
+    indices: Vec<usize>,
+    phrase: String,
+    tokens: Vec<String>,
+) -> Result<Vec<crate::reader_search::Scan>, LinkedLibraryError> {
+    let session = native_archive_session(&app, window.label(), &session_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::reader_search::batch(&session, &indices, &phrase, &tokens).map_err(archive_fault_error)
+    })
+    .await
+    .map_err(|error| format!("书内搜索线程失败：{error}"))?
+}
+
+#[tauri::command]
 pub async fn linked_library_archive_close(
     app: AppHandle,
     window: tauri::Window,

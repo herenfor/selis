@@ -1,21 +1,20 @@
+import { ChapterTextCache, compileBookQuery, mayMatchChapter } from "./searchChapterText";
+import type { ScannedChapter } from "./readerSearchSource";
 import { spineItemPath } from "./book";
 import { splitHref } from "./paths";
 import {
-  BLOCK_BOUNDARY,
-  MAX_ANCHOR_SNIPPET_CODE_POINTS,
   buildDocument,
   extractSearchText,
   extractSearchTextSegments,
   extractVisibleText,
   normalizeQueryPart,
-  type SearchDocument,
   type SearchTextSegment,
 } from "./corpus";
 import type { Book, TocNode } from "./types";
-import { buildExactTextHitsAndPoints, type ExactTextHit } from "./exactTextHits";
-import { captureSearchOccurrence, type SearchOccurrence } from "./searchOccurrence";
+import type { ExactTextHit } from "./exactTextHits";
+import type { SearchOccurrence } from "./searchOccurrence";
 
-const ANCHOR_WHITESPACE = /\p{White_Space}/u;
+import { matchesForDocument, projectedMatches, type ProjectedDocuments } from "./searchMatches";
 
 function decodeBytes(data: Uint8Array): string {
   if (data.length >= 2) {
@@ -32,7 +31,6 @@ export interface SearchProgress {
 }
 
 export interface SearchBookOptions {
-  /** Overrides ResourceServer/book resource decoding, useful for tests and streaming hosts. */
   /**
    * Chapter source. `undefined` means "not available right now" and is never
    * cached; a thrown error means the read failed and fails the query.
@@ -46,8 +44,10 @@ export interface SearchBookOptions {
   };
   signal?: AbortSignal;
   maxResults?: number;
+  /** Reader only: continue preparing chapter text after delivering a limited result set. */
+  warmAfterLimit?: boolean;
   onProgress?: (progress: SearchProgress) => void;
-  /** Defaults to a macrotask yield after every processed chapter. */
+  /** An explicit scheduler runs after each chapter; the default yields by elapsed time. */
   yieldToHost?: () => Promise<void>;
   /** When present, searches projected display text while retaining canonical original hits. */
   projection?: SearchProjection;
@@ -133,32 +133,6 @@ function defaultYield(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function publicText(text: string): string {
-  return text.replaceAll(BLOCK_BOUNDARY, "\n");
-}
-
-/** Build the persisted-anchor snippet without copying/splitting the whole chapter. */
-function anchorSnippetFromRaw(text: string, rawStart: number): string {
-  const points: string[] = [];
-  for (const point of Array.from(text.slice(rawStart))) {
-    if (point === BLOCK_BOUNDARY || ANCHOR_WHITESPACE.test(point)) continue;
-    points.push(point);
-    if (points.length >= MAX_ANCHOR_SNIPPET_CODE_POINTS) break;
-  }
-  return points.join("");
-}
-
-function findAll(haystack: string, needle: string, from = 0): number[] {
-  const result: number[] = [];
-  if (!needle) return result;
-  let index = from;
-  while ((index = haystack.indexOf(needle, index)) >= 0) {
-    result.push(index);
-    index += Math.max(1, needle.length);
-  }
-  return result;
-}
-
 function titleFor(book: Book, path: string): string {
   const target = book.archiveReferences ? path : splitHref(path).path;
   const visit = (nodes: TocNode[]): string | undefined => {
@@ -175,205 +149,9 @@ function titleFor(book: Book, path: string): string {
   return base.replace(/\.[^.]+$/, "") || target;
 }
 
-function snippetFor(text: string, ranges: Array<{ start: number; end: number }>): {
-  snippet: string;
-  matchRanges: Array<{ start: number; end: number }>;
-  rawStart: number;
-  rawEnd: number;
-} {
-  const before = 48;
-  const after = 96;
-  const rawStart = Math.min(...ranges.map((range) => range.start));
-  const rawEnd = Math.max(...ranges.map((range) => range.end));
-  const contextStart = Math.max(0, rawStart - before);
-  const contextEnd = Math.min(text.length, rawEnd + after);
-  const rawSnippet = publicText(text.slice(contextStart, contextEnd));
-  const leading = rawSnippet.length - rawSnippet.trimStart().length;
-  return {
-    snippet: rawSnippet.trim(),
-    rawStart,
-    rawEnd,
-    matchRanges: ranges.map((range) => ({
-      start: Math.max(0, range.start - contextStart - leading),
-      end: Math.max(0, range.end - contextStart - leading),
-    })),
-  };
-}
-
-function rawRangeFor(doc: SearchDocument, start: number, end: number): { start: number; end: number } {
-  const first = doc.rawStarts[start];
-  const last = doc.rawEnds[Math.max(start, end - 1)];
-  const rawStart = first ?? 0;
-  const rawEnd = last ?? rawStart;
-  return { start: rawStart, end: rawEnd };
-}
-
-function codePointRangeForUnits(doc: SearchDocument, startUnit: number, endUnit: number): { start: number; end: number } {
-  if (endUnit <= startUnit || startUnit < 0 || startUnit >= doc.normalized.length) {
-    return { start: 0, end: 0 };
-  }
-  const start = doc.normalizedUnitToEntry[startUnit] ?? 0;
-  const last = doc.normalizedUnitToEntry[Math.min(doc.normalized.length, endUnit) - 1] ?? start;
-  return { start, end: last + 1 };
-}
-
-function resultFor(
-  doc: SearchDocument,
-  start: number,
-  spineIndex: number,
-  chapterPath: string,
-  chapterTitle: string,
-  matchType: SearchResult["matchType"],
-  normalizedRanges: Array<{ start: number; end: number }>,
-): SearchResult {
-  const rawRanges = normalizedRanges.map((range) => rawRangeFor(doc, range.start, range.end));
-  const snippet = snippetFor(doc.text, rawRanges);
-  const rawStart = snippet.rawStart;
-  const rawEnd = snippet.rawEnd;
-  const anchorOffset = doc.anchorStarts[start] ?? 0;
-  const exactHits = buildExactTextHitsAndPoints(doc.text, rawRanges);
-  const textHits = exactHits?.hits;
-  const occurrence = exactHits && textHits
-    ? captureSearchOccurrence(exactHits.points, textHits) ?? undefined
-    : undefined;
-  return {
-    spineIndex,
-    chapterPath,
-    chapterTitle,
-    snippet: snippet.snippet,
-    snippetMatchRanges: snippet.matchRanges,
-    originalRange: { start: rawStart, end: rawEnd },
-    textOffset: anchorOffset,
-    textSnippet: anchorSnippetFromRaw(doc.text, rawStart),
-    matchedText: publicText(doc.text.slice(rawStart, rawEnd)),
-    textHits,
-    occurrence,
-    matchType,
-  };
-}
-
-interface MatchGroup {
-  matchType: SearchResult["matchType"];
-  /** Normalized code-point ranges in the scanned document. */
-  ranges: Array<{ start: number; end: number }>;
-}
-
-function matchGroupsForDocument(doc: SearchDocument, query: string): MatchGroup[] {
-  const phrase = normalizeQueryPart(query);
-  if (!phrase) return [];
-  const groups: MatchGroup[] = [];
-  for (const startUnit of findAll(doc.normalized, phrase)) {
-    const range = codePointRangeForUnits(doc, startUnit, startUnit + phrase.length);
-    groups.push({ matchType: "phrase", ranges: [range] });
-  }
-  const tokens = query.trim().split(/\s+/u).map(normalizeQueryPart).filter(Boolean);
-  if (tokens.length < 2) return groups;
-  let segmentStart = 0;
-  for (let i = 0; i <= doc.normalized.length; i++) {
-    if (i !== doc.normalized.length && doc.normalized[i] !== BLOCK_BOUNDARY) continue;
-    const segment = doc.normalized.slice(segmentStart, i);
-    const tokenStarts = tokens.map((token) => segment.indexOf(token));
-    if (tokenStarts.every((value) => value >= 0)) {
-      const ranges = tokenStarts.map((value, index) => codePointRangeForUnits(
-        doc,
-        segmentStart + value,
-        segmentStart + value + tokens[index].length,
-      ));
-      groups.push({ matchType: "keywords", ranges });
-    }
-    segmentStart = i + 1;
-  }
-  return groups;
-}
-
-function resultForGroup(
-  doc: SearchDocument,
-  group: MatchGroup,
-  spineIndex: number,
-  chapterPath: string,
-  chapterTitle: string,
-): SearchResult {
-  return resultFor(
-    doc,
-    Math.min(...group.ranges.map((range) => range.start)),
-    spineIndex,
-    chapterPath,
-    chapterTitle,
-    group.matchType,
-    group.ranges,
-  );
-}
-
-function matchesForDocument(
-  doc: SearchDocument,
-  query: string,
-  spineIndex: number,
-  chapterPath: string,
-  chapterTitle: string,
-): SearchResult[] {
-  const results = matchGroupsForDocument(doc, query)
-    .map((group) => resultForGroup(doc, group, spineIndex, chapterPath, chapterTitle));
-  const unique = new Map<string, SearchResult>();
-  for (const result of results) {
-    const key = `${result.originalRange.start}:${result.originalRange.end}`;
-    const previous = unique.get(key);
-    if (!previous || (previous.matchType === "keywords" && result.matchType === "phrase")) unique.set(key, result);
-  }
-  return [...unique.values()].sort((a, b) => a.originalRange.start - b.originalRange.start);
-}
-
-function displayResultForGroup(
-  sourceDoc: SearchDocument,
-  displayDoc: SearchDocument,
-  displayGroup: MatchGroup,
-  sourceRanges: ReadonlyArray<{ start: number; end: number }>,
-  projectionVersion: string,
-  spineIndex: number,
-  chapterPath: string,
-  chapterTitle: string,
-): SearchResult | null {
-  const displayRawRanges = displayGroup.ranges.map((range) =>
-    rawRangeFor(displayDoc, range.start, range.end),
-  );
-  if (displayRawRanges.some((range) => range.end <= range.start)) return null;
-  const sourceExact = buildExactTextHitsAndPoints(sourceDoc.text, [...sourceRanges]);
-  const displayExact = buildExactTextHitsAndPoints(displayDoc.text, displayRawRanges);
-  if (!sourceExact || !displayExact || sourceExact.hits.length === 0) return null;
-  const sourceRawStart = Math.min(...sourceRanges.map((range) => range.start));
-  const sourceRawEnd = Math.max(...sourceRanges.map((range) => range.end));
-  const displayRawStart = Math.min(...displayRawRanges.map((range) => range.start));
-  const displayRawEnd = Math.max(...displayRawRanges.map((range) => range.end));
-  const displaySnippet = snippetFor(displayDoc.text, displayRawRanges);
-  const displayHits = displayExact.hits;
-  const displayOccurrence = captureSearchOccurrence(displayExact.points, displayHits);
-  if (!displayOccurrence) return null;
-  return {
-    spineIndex,
-    chapterPath,
-    chapterTitle,
-    snippet: displaySnippet.snippet,
-    snippetMatchRanges: displaySnippet.matchRanges,
-    originalRange: { start: sourceRawStart, end: sourceRawEnd },
-    textOffset: Math.min(...sourceExact.hits.map((hit) => hit.start)),
-    textSnippet: anchorSnippetFromRaw(sourceDoc.text, sourceRawStart),
-    matchedText: publicText(displayDoc.text.slice(displayRawStart, displayRawEnd)),
-    textHits: sourceExact.hits,
-    occurrence: captureSearchOccurrence(sourceExact.points, sourceExact.hits) ?? undefined,
-    display: {
-      projectionVersion,
-      range: { start: displayRawStart, end: displayRawEnd },
-      matchedText: publicText(displayDoc.text.slice(displayRawStart, displayRawEnd)),
-      textHits: displayHits,
-      occurrence: displayOccurrence,
-    },
-    matchType: displayGroup.matchType,
-  };
-}
-
 /**
- * Create a per-book search session. It does not read any chapter at creation;
- * each completed chapter is cached so rapid follow-up queries only rescan
- * normalized arrays. dispose() releases all extracted text and mappings.
+ * Read chapters on demand. Plain text is cached within a memory budget, while
+ * projected chapters retain the coordinate maps needed by display search.
  */
 export function createSearchSession(book: Book, options: SearchBookOptions = {}): SearchSession {
   const server = options.resourceServer;
@@ -388,124 +166,125 @@ export function createSearchSession(book: Book, options: SearchBookOptions = {})
       return resource ? decodeBytes(resource.data) : undefined;
     });
   const linear = book.spine.map((item, index) => ({ item, index })).filter(({ item }) => item.linear);
-  interface CachedChapter {
-    source: SearchDocument;
-    sourceText: string;
-    display: SearchDocument;
-    displayText: string;
-    projected: ProjectedSearchChapter | null;
-  }
-  const cache = new Map<number, CachedChapter | null>();
+  const cache = new Map<number, ProjectedDocuments>();
+  const plain = new ChapterTextCache();
   const projection = options.projection;
   let disposed = false;
+  let warmJob: AbortController | undefined;
+  let queryEpoch = 0;
+  async function plainChapter(index: number, path: string, signal?: AbortSignal) {
+    const cached = plain.get(index);
+    if (cached) return cached;
+    const source = await textFor(path, signal);
+    abortIfNeeded(signal);
+    if (source === undefined) return undefined;
+    const visible = await extractSearchText(source);
+    abortIfNeeded(signal);
+    if (disposed) throw new DOMException("搜索会话已释放", "AbortError");
+    return plain.remember(index, visible);
+  }
+
+  function warmRemaining(start: number, native: typeof book.scanChapters) {
+    if (start >= linear.length || disposed) return;
+    const controller = new AbortController();
+    warmJob = controller;
+    const signal = controller.signal;
+    const run = async () => {
+      for (let pos = start; pos < linear.length; pos += 16) {
+        await new Promise(resolve => setTimeout(resolve, 16));
+        abortIfNeeded(signal);
+        const items = linear.slice(pos, pos + 16);
+        const paths = items.map(({ index }) => spineItemPath(book, index) ?? "");
+        const rows = await native?.(paths, "", [], signal);
+        for (let i = 0; i < items.length; i++) {
+          abortIfNeeded(signal);
+          if (paths[i] && (!rows || rows[i].kind === "compatibility")) await plainChapter(items[i].index, paths[i], signal);
+        }
+      }
+    };
+    // A foreground read will retry any missing chapter and report actual read errors.
+    void run().catch(() => undefined).finally(() => { if (warmJob === controller) warmJob = undefined; });
+  }
   return {
     async search(query, queryOptions = {}): Promise<SearchResult[]> {
       if (disposed) throw new Error("搜索会话已释放");
+      warmJob?.abort();
+      const epoch = ++queryEpoch;
       const maxResults = Math.max(0, Math.floor(queryOptions.maxResults ?? options.maxResults ?? 100));
       if (maxResults === 0) return [];
       const signal = queryOptions.signal ?? options.signal;
       const onProgress = queryOptions.onProgress ?? options.onProgress;
       const yieldToHost = queryOptions.yieldToHost ?? options.yieldToHost ?? defaultYield;
       const results: SearchResult[] = [];
+      const compiled = compileBookQuery(query);
+      if (!compiled.phrase) return results;
+      const nativeEligible = !projection && !options.textFor && compiled.phrase.length <= 4096 && compiled.tokens.length <= 128 && !compiled.phrase.includes("\0");
+      const nativeScan = nativeEligible ? book.scanChapters : undefined;
+      let batch: ScannedChapter[] = [];
+      let batchStart = 0;
+      let lastYield = performance.now();
       for (let completed = 0; completed < linear.length; completed++) {
         abortIfNeeded(signal);
         const { index } = linear[completed];
         const path = spineItemPath(book, index);
-        if (path) {
+        if (disposed) throw new DOMException("搜索会话已释放", "AbortError");
+        if (nativeScan && completed >= batchStart + batch.length) {
+          batchStart = completed;
+          const paths = linear.slice(completed, completed + 32).map(item => spineItemPath(book, item.index) ?? "");
+          batch = await nativeScan(paths, compiled.phrase, compiled.tokens, signal);
+          abortIfNeeded(signal);
+          if (disposed) throw new DOMException("搜索会话已释放", "AbortError");
+        }
+        const row = batch[completed - batchStart];
+        if (path && !projection && row?.kind !== "miss") {
+          let text: string | undefined;
+          if (row?.kind === "match") text = row.text;
+          else {
+            const entry = await plainChapter(index, path, signal);
+            if (entry && mayMatchChapter(entry.normalized, compiled)) text = entry.text;
+          }
+          if (text !== undefined) {
+            const doc = buildDocument(text);
+            const found = matchesForDocument(doc, compiled, index, path, titleFor(book, path), maxResults - results.length,
+              row?.kind === "match" ? row.starts ?? undefined : undefined);
+            for (const hit of found) results.push(hit);
+          }
+        } else if (path && projection) {
           let chapter = cache.get(index);
-          if (!cache.has(index)) {
+          if (!chapter) {
             const source = await textFor(path, signal);
             abortIfNeeded(signal);
-            // A stale query must not rebuild the cache of a disposed session.
-            if (disposed) throw new Error("搜索会话已释放");
-            if (source === undefined) {
-              // Not loaded yet: skip it for this query but do not remember it
-              // as an empty chapter, so a later query reads it again.
-              chapter = null;
-            } else {
-              const segmented = projection ? await extractSearchTextSegments(source) : null;
-              const sourceText = segmented?.text ?? await extractSearchText(source);
-              const sourceDoc = buildDocument(sourceText);
-              const projected = projection
-                ? projection.projectChapter(sourceText, segmented?.segments ?? [])
-                : null;
-              const displayText = projected?.text ?? sourceText;
-              chapter = {
-                source: sourceDoc,
-                sourceText,
-                display: displayText === sourceText ? sourceDoc : buildDocument(displayText),
-                displayText,
-                projected,
-              };
+            if (source !== undefined) {
+              const { text, segments } = await extractSearchTextSegments(source);
+              abortIfNeeded(signal);
+              if (disposed) throw new DOMException("搜索会话已释放", "AbortError");
+              const sourceDoc = buildDocument(text);
+              const projected = projection.projectChapter(text, segments);
+              chapter = { source: sourceDoc, display: projected.text === text ? sourceDoc : buildDocument(projected.text), projected };
+              cache.set(index, chapter);
             }
-            if (disposed) throw new Error("搜索会话已释放");
-            if (chapter) cache.set(index, chapter);
           }
           if (chapter) {
-            if (!projection) {
-              results.push(...matchesForDocument(chapter.source, query, index, path, titleFor(book, path)));
-            } else {
-              const groups = matchGroupsForDocument(chapter.display, query);
-              const chapterResults: SearchResult[] = [];
-              const projected = chapter.projected;
-              if (!projected) continue;
-              for (const group of groups) {
-                const sourceRanges: Array<{ start: number; end: number }> = [];
-                let mapped = true;
-                for (const range of group.ranges) {
-                  const displayRaw = rawRangeFor(chapter.display, range.start, range.end);
-                  const sourceRaw = projected.toSourceRawRange(displayRaw.start, displayRaw.end);
-                  if (!sourceRaw) {
-                    mapped = false;
-                    break;
-                  }
-                  sourceRanges.push(sourceRaw);
-                }
-                if (!mapped) continue;
-                const result = displayResultForGroup(
-                  chapter.source,
-                  chapter.display,
-                  group,
-                  sourceRanges,
-                  projection.version,
-                  index,
-                  path,
-                  titleFor(book, path),
-                );
-                if (result) chapterResults.push(result);
-              }
-              // Phrase wins over keyword duplicates of the same visible
-              // occurrence. Different display occurrences are never removed
-              // merely because they map back to one non-invertible fragment.
-              const uniqueChapter = new Map<string, SearchResult>();
-              for (const result of chapterResults) {
-                const key = `${result.display?.range.start ?? -1}:${result.display?.range.end ?? -1}`;
-                const previous = uniqueChapter.get(key);
-                if (!previous || (previous.matchType === "keywords" && result.matchType === "phrase")) {
-                  uniqueChapter.set(key, result);
-                }
-              }
-              const uniqueResults = [...uniqueChapter.values()].sort((a, b) =>
-                a.originalRange.start - b.originalRange.start ||
-                (a.display?.range.start ?? 0) - (b.display?.range.start ?? 0),
-              );
-              results.push(...uniqueResults);
-            }
-            if (results.length >= maxResults) {
-              results.length = maxResults;
-              onProgress?.({ completed: completed + 1, total: linear.length, spineIndex: index });
-              return results;
-            }
+            const found = projectedMatches(chapter, compiled, index, path, titleFor(book, path), projection.version, maxResults - results.length);
+            for (const hit of found) results.push(hit);
           }
         }
         onProgress?.({ completed: completed + 1, total: linear.length, spineIndex: index });
-        await yieldToHost();
+        if (results.length >= maxResults) {
+          if (options.warmAfterLimit && !projection && epoch === queryEpoch) warmRemaining(completed + 1, nativeScan);
+          return results;
+        }
+        if (queryOptions.yieldToHost || options.yieldToHost || performance.now() - lastYield >= 8) {
+          await yieldToHost(); lastYield = performance.now();
+        }
       }
       return results;
     },
     dispose(): void {
       disposed = true;
+      warmJob?.abort();
       cache.clear();
+      plain.clear();
     },
   };
 }
@@ -521,4 +300,4 @@ export async function searchBook(book: Book, query: string, options: SearchBookO
 }
 
 export { extractSearchText, extractVisibleText, buildDocument, normalizeQueryPart };
-export type { SearchDocument };
+export type { SearchDocument } from "./corpus";

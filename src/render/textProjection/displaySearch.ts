@@ -156,7 +156,7 @@ export function createTextSearchSession(
   if (view === "display" && projection) {
     return createDisplaySearchSession(book, projection, options);
   }
-  return createSearchSession(book, options);
+  return createSearchSession(book, { warmAfterLimit: true, ...options });
 }
 
 /**

@@ -26,6 +26,7 @@ mod import_gate;
 mod ipc_bytes;
 mod lan_save;
 pub(crate) mod native_zip_session;
+mod reader_search;
 pub(crate) mod transfer_policy;
 mod portable_state_commands;
 mod private_shelf;
@@ -116,6 +117,7 @@ macro_rules! configure_invoke_handler {
             linked_library::linked_library_archive_directory,
             linked_library::linked_library_archive_compact_directory,
             linked_library::linked_library_archive_read,
+            linked_library::reader_search_batch,
             linked_library::linked_library_archive_close,
             linked_library::linked_library_relink,
             linked_library::linked_library_reveal_source,
@@ -321,6 +323,7 @@ macro_rules! configure_invoke_handler {
             linked_library::linked_library_archive_directory,
             linked_library::linked_library_archive_compact_directory,
             linked_library::linked_library_archive_read,
+            linked_library::reader_search_batch,
             linked_library::linked_library_archive_close,
             linked_library::linked_library_relink,
             linked_library::linked_library_reveal_source,

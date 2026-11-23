@@ -72,6 +72,27 @@ export function buildExactTextHitsAndPoints(
   return { hits, points };
 }
 
+/** Many hits in one chapter share the same UTF-16 to visible-code-point map. */
+export function createChapterHitResolver(source: string) {
+  const offsets = new Uint32Array(source.length + 1);
+  const points: string[] = [];
+  let offset = 0;
+  for (const point of source) {
+    if (point !== "\u0000" && !/\p{White_Space}/u.test(point)) points.push(point);
+    offset += point.length;
+    offsets[offset] = points.length;
+  }
+  return (ranges: readonly RawTextRange[]): ExactTextHitsAndPoints | null => {
+    const hits: ExactTextHit[] = [];
+    for (const range of ranges) {
+      const start = offsets[range.start], end = offsets[range.end];
+      if (start === undefined || end === undefined || end <= start) return null;
+      hits.push({ start, end, exactText: points.slice(start, end).join("") });
+    }
+    return hits.length ? { points, hits } : null;
+  };
+}
+
 /** Compatibility wrapper for callers that only need the mapped ranges. */
 export function buildExactTextHits(
   source: string,

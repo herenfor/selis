@@ -177,6 +177,7 @@ pub struct NativeZipSession {
     cancelled: Arc<AtomicBool>,
     request_gate: Mutex<()>,
     pub entry_count: usize,
+    pub(crate) reader_search: Mutex<crate::reader_search::SearchCache>,
 }
 
 impl NativeZipSession {
@@ -269,7 +270,7 @@ impl NativeZipSession {
                 }
             });
         }
-        Ok(Self { tx, cancelled, request_gate: Mutex::new(()), entry_count })
+        Ok(Self { tx, cancelled, request_gate: Mutex::new(()), entry_count, reader_search: Mutex::default() })
     }
 
     fn request<T>(&self, command: impl FnOnce(Reply<T>) -> Command) -> Result<T, Fault> {
@@ -281,6 +282,8 @@ impl NativeZipSession {
         self.tx.send(command(reply)).map_err(|_| Fault::Closed)?;
         result.recv().map_err(|_| Fault::Closed)?
     }
+
+    pub(crate) fn is_closed(&self) -> bool { self.cancelled.load(Ordering::Acquire) }
 
     pub fn directory_page(&self, start: usize) -> Result<DirectoryPage, Fault> {
         self.request(|reply| Command::Directory { start, reply })

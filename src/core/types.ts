@@ -1,3 +1,4 @@
+import type { ScanChapters } from "./readerSearchSource";
 import type { ArchiveReferences } from "./archiveReferences";
 /** 核心数据模型（解析层输出，渲染层与 UI 层消费）。 */
 
@@ -102,6 +103,7 @@ export interface Book {
   ensureResources?: (paths: Iterable<string>, signal?: AbortSignal) => Promise<void>;
   /** 读取指定路径的资源字节（若未加载则按需解压） */
   readResource?: (path: string) => Promise<Uint8Array | undefined>;
+  scanChapters?: ScanChapters;
   /** 选择性归档句柄，关书时释放 */
   archive?: { close: () => void };
 }

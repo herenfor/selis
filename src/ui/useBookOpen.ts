@@ -1,3 +1,4 @@
+import { attachSearchArchive } from "../core/readerSearchSource";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { formatListKey } from "./bookFormatText";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
@@ -605,6 +606,10 @@ export function useBookOpen({
         // 在 openParsedBook 正式接管前，Book 仍由本函数负责释放；
         // 后面的空 spine / 进度解析 / 目标校验等任何失败路径都不能漏掉。
         unownedBook = b;
+        if (!openArchive && isTauriEnv() && sourceFormat(entry.fileName) === "epub" && store.openArchive) {
+          const openForSearch = store.openArchive.bind(store);
+          attachSearchArchive(b, () => openForSearch(id));
+        }
         if (b.spine.length === 0) {
           throw new Error("这本书没有可阅读的内容");
         }

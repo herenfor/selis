@@ -523,7 +523,7 @@ export class TauriShelfStore implements ShelfStore {
   }
 
   async openArchive(id: string, textEncoding?: string): Promise<ArchiveClient> {
-    return createNativeLinkedArchiveClient(id, invoke, undefined, textEncoding);
+    return createNativeLinkedArchiveClient(id, invoke, undefined, textEncoding, true);
   }
 
   async readCover(id: string): Promise<Uint8Array | null> {
