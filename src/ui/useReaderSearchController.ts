@@ -12,6 +12,7 @@ import type { SearchNavigationOutcome } from "./useReaderNavigation";
  */
 export interface ReaderSearchControllerOptions {
   searchQuery: string;
+  searchGenerationRef: { readonly current: number };
   setSearchQuery(value: string): void;
   searchView: "display" | "original";
   /** Only a book with an active text projection has a meaningful original/display choice. */
@@ -55,7 +56,7 @@ export interface ReaderSearchController {
 export function useReaderSearchController(options: ReaderSearchControllerOptions): ReaderSearchController {
   const {
     searchQuery, setSearchQuery, searchView, searchOriginsAvailable, handleSearchViewChange,
-    searchStatus, searchCount,
+    searchStatus, searchCount, searchGenerationRef,
     searchProgress, searchError, searchCurrentIndex, setSearchCurrentIndex, searchNavigationBusy,
     searchPanelRowAt, ensureSearchRows, resolveSearchIndex, handleSearchCancel, handleSearchResume,
     searchScrollTopRef, onNavigate, openResults, showNotice, settleRef,
@@ -63,22 +64,21 @@ export function useReaderSearchController(options: ReaderSearchControllerOptions
 
   const [waiting, setWaiting] = useState(false);
   const [resolving, setResolving] = useState(false);
-  const pendingRef = useRef<{ index: number; requestId: number } | null>(null);
+  const pendingRef = useRef<{ index: number; requestId: number; generation: number } | null>(null);
 
   // Cross-chapter clicks commit their index only once the precise target settled.
   const settle = useCallback((requestId: number, located: boolean): void => {
     const pending = pendingRef.current;
     if (!pending || pending.requestId !== requestId) return;
     pendingRef.current = null;
-    if (located) setSearchCurrentIndex(pending.index);
-  }, [setSearchCurrentIndex]);
+    if (located && pending.generation === searchGenerationRef.current) setSearchCurrentIndex(pending.index);
+  }, [searchGenerationRef, setSearchCurrentIndex]);
   useEffect(() => {
     settleRef.current = settle;
     return () => { settleRef.current = null; };
   }, [settle, settleRef]);
 
-  // A new query (or newly published rows) invalidates the previous position.
-  useEffect(() => { setWaiting(false); pendingRef.current = null; }, [searchCount, searchQuery]);
+  useEffect(() => { setWaiting(false); }, [searchCount, searchQuery]);
 
   const goToIndex = useCallback(async (index: number): Promise<void> => {
     if (index < 0) return;
@@ -94,20 +94,21 @@ export function useReaderSearchController(options: ReaderSearchControllerOptions
     if (resolving) return;
     setResolving(true);
     try {
+      const generation = searchGenerationRef.current;
       const result = await resolveSearchIndex(index);
-      if (!result) return;
+      if (!result || generation !== searchGenerationRef.current) return;
       const outcome = onNavigate(result);
       if (outcome.status === "committed") {
         pendingRef.current = null;
         setWaiting(false);
         setSearchCurrentIndex(index);
       } else if (outcome.status === "pending") {
-        pendingRef.current = { index, requestId: outcome.requestId };
+        pendingRef.current = { index, requestId: outcome.requestId, generation };
       }
     } finally {
       setResolving(false);
     }
-  }, [onNavigate, resolveSearchIndex, resolving, searchCount, searchStatus, setSearchCurrentIndex,
+  }, [onNavigate, resolveSearchIndex, resolving, searchCount, searchGenerationRef, searchStatus, setSearchCurrentIndex,
     showNotice]);
 
   const openResultsAt = useCallback((): void => {

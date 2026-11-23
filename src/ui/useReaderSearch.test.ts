@@ -8,6 +8,8 @@ import { createReactDomHarness } from "../test/reactDomHarness";
 import { useReaderSearchView, useReaderSearchState, useReaderSearchRefs,
   useReaderSearchSession, useReaderSearchQuery, useReaderSearchPanel } from "./useReaderSearch";
 
+import { SearchResultWindowList } from "./SearchPanel";
+
 const ports = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock("../render/textProjection/displaySearch", () => ({ createTextSearchSession: ports.create }));
 
@@ -41,7 +43,7 @@ function fakeQuery(onUpdate?: (snapshot: ReaderQuerySnapshot) => void) {
   };
 }
 
-function setup() {
+function setup(renderWindow = false) {
   const dom = createReactDomHarness();
   vi.useFakeTimers();
   const queries: Array<ReturnType<typeof fakeQuery> & { text: string; options: { onUpdate?(s: ReaderQuerySnapshot): void } }> = [];
@@ -74,7 +76,14 @@ function setup() {
     return { ...searchView, ...state, ...refs, ...panel };
   }
   let api!: ReturnType<typeof useHost>;
-  function Host() { api = useHost(); return createElement("div", {}, api.searchStatus); }
+  function Host() {
+    api = useHost();
+    if (!renderWindow) return createElement("div", {}, api.searchStatus);
+    return createElement(SearchResultWindowList, {
+      virtual: { count: api.searchCount, rowAt: api.searchPanelRowAt, onRange: api.ensureSearchRows },
+      onSelect: () => undefined,
+    });
+  }
   return { dom, queries, sessions, current: () => api,
     render: () => dom.render(createElement(Host)),
     change: async (next: Partial<typeof context>) => { context = { ...context, ...next }; await dom.render(createElement(Host)); },
@@ -172,6 +181,25 @@ describe("ER-0228 review fixes", () => {
       await t.dom.run(() => t.current().ensureSearchRows(0, 20));
       expect(t.queries[0].query.window).toHaveBeenCalledTimes(2);
       expect(t.current().searchPanelRowAt(13)?.snippet).toBe("Alice 13");
+    } finally { await t.dispose(); }
+  });
+
+  it("fills a stationary viewport when the final count arrives during its first read", async () => {
+    const t = setup(true);
+    try {
+      await t.render();
+      await t.dom.run(() => t.current().setSearchQuery("Alice"));
+      await t.advance(180);
+      const { query, publish } = t.queries[0];
+      let finishFirst!: (value: SearchPreview[]) => void;
+      vi.mocked(query.window).mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }));
+      await t.dom.run(() => publish({ status: "scanning", completed: 1, total: 3, count: 1 }));
+      await t.dom.run(() => publish({ status: "complete", completed: 3, total: 3, count: 20 }));
+      expect(query.window).toHaveBeenCalledTimes(1);
+      await t.dom.run(() => finishFirst(rows.slice(0, 1)));
+      expect(query.window).toHaveBeenNthCalledWith(2, 1, 19);
+      expect(t.dom.container.querySelectorAll("button")[4]?.textContent).toContain("Alice 4");
+      expect(t.current().searchPanelRowAt(19)?.snippet).toBe("Alice 19");
     } finally { await t.dispose(); }
   });
 
