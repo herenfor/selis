@@ -14,7 +14,10 @@ import type { Book, TocNode } from "./types";
 import type { ExactTextHit } from "./exactTextHits";
 import type { SearchOccurrence } from "./searchOccurrence";
 
-import { matchesForDocument, projectedMatches, type ProjectedDocuments } from "./searchMatches";
+import { startReaderQuery, type ReaderSearchQuery, type ReaderQueryOptions } from "./readerSearchQuery";
+export type { ReaderSearchQuery, ReaderQuerySnapshot, ReaderQueryOptions } from "./readerSearchQuery";
+export type { SearchPreview } from "./searchMatches";
+import { scanChapterRanges, matchesForDocument, projectedMatches, type ProjectedDocuments } from "./searchMatches";
 
 function decodeBytes(data: Uint8Array): string {
   if (data.length >= 2) {
@@ -76,6 +79,10 @@ export interface SearchProjection {
 export interface SearchSession {
   search(query: string, options?: SearchQueryOptions): Promise<SearchResult[]>;
   dispose(): void;
+}
+
+export interface ReaderSearchSession extends SearchSession {
+  startQuery(query: string, options?: ReaderQueryOptions): ReaderSearchQuery;
 }
 
 export interface DisplaySearchTarget {
@@ -153,7 +160,7 @@ function titleFor(book: Book, path: string): string {
  * Read chapters on demand. Plain text is cached within a memory budget, while
  * projected chapters retain the coordinate maps needed by display search.
  */
-export function createSearchSession(book: Book, options: SearchBookOptions = {}): SearchSession {
+export function createSearchSession(book: Book, options: SearchBookOptions = {}): ReaderSearchSession {
   const server = options.resourceServer;
   const textFor = options.textFor
     ?? (server
@@ -184,6 +191,28 @@ export function createSearchSession(book: Book, options: SearchBookOptions = {})
     return plain.remember(index, visible);
   }
 
+  async function projectedChapter(index: number, path: string, signal?: AbortSignal) {
+    const cached = cache.get(index);
+    if (cached) return cached;
+    const source = await textFor(path, signal);
+    abortIfNeeded(signal);
+    if (source === undefined || !projection) return undefined;
+    const { text, segments } = await extractSearchTextSegments(source);
+    abortIfNeeded(signal);
+    if (disposed) throw new DOMException("搜索会话已释放", "AbortError");
+    const sourceDoc = buildDocument(text);
+    const projected = projection.projectChapter(text, segments);
+    const chapter = { source: sourceDoc, display: projected.text === text ? sourceDoc : buildDocument(projected.text), projected };
+    cache.set(index, chapter);
+    return chapter;
+  }
+
+  function nativeFor(compiled: ReturnType<typeof compileBookQuery>) {
+    return !projection && !options.textFor && compiled.phrase.length <= 4096 && compiled.tokens.length <= 128 && !compiled.phrase.includes("\0")
+      ? book.scanChapters : undefined;
+  }
+  let readerQuery: ReaderSearchQuery | undefined;
+  let readerChapters: { index: number; path: string }[] | undefined;
   function warmRemaining(start: number, native: typeof book.scanChapters) {
     if (start >= linear.length || disposed) return;
     const controller = new AbortController();
@@ -206,6 +235,35 @@ export function createSearchSession(book: Book, options: SearchBookOptions = {})
     void run().catch(() => undefined).finally(() => { if (warmJob === controller) warmJob = undefined; });
   }
   return {
+    startQuery(query, queryOptions = {}) {
+      if (disposed) throw new Error("搜索会话已释放");
+      readerQuery?.cancel();
+      warmJob?.abort();
+      queryEpoch++;
+      readerChapters ??= linear.map(({ index }) => ({ index, path: spineItemPath(book, index) ?? "" }));
+      const compiled = compileBookQuery(query);
+      const schedule = options.yieldToHost ?? defaultYield;
+      readerQuery = startReaderQuery({
+        chapters: readerChapters,
+        native: nativeFor(compiled),
+        identity: ({ index, path }) => ({ spineIndex: index, chapterPath: path, chapterTitle: titleFor(book, path) }),
+        yieldToHost: schedule,
+        async compatible({ index, path }, terms, signal) {
+          if (!path) throw new Error(`无法定位书内搜索章节 ${index + 1}`);
+          if (projection) {
+            const docs = await projectedChapter(index, path, signal);
+            if (!docs) throw new Error(`无法读取搜索章节 ${path}`);
+            return { source: docs.source.text, display: docs.display.text, version: projection.version,
+              hits: await scanChapterRanges(docs.display, terms, docs, signal, schedule) };
+          }
+          const entry = await plainChapter(index, path, signal);
+          if (!entry) throw new Error(`无法读取搜索章节 ${path}`);
+          return { source: entry.text, display: entry.text,
+            hits: mayMatchChapter(entry.normalized, terms) ? await scanChapterRanges(buildDocument(entry.text), terms, undefined, signal, schedule) : [] };
+        },
+      }, compiled, { ...queryOptions, signal: queryOptions.signal ?? options.signal });
+      return readerQuery;
+    },
     async search(query, queryOptions = {}): Promise<SearchResult[]> {
       if (disposed) throw new Error("搜索会话已释放");
       warmJob?.abort();
@@ -218,8 +276,7 @@ export function createSearchSession(book: Book, options: SearchBookOptions = {})
       const results: SearchResult[] = [];
       const compiled = compileBookQuery(query);
       if (!compiled.phrase) return results;
-      const nativeEligible = !projection && !options.textFor && compiled.phrase.length <= 4096 && compiled.tokens.length <= 128 && !compiled.phrase.includes("\0");
-      const nativeScan = nativeEligible ? book.scanChapters : undefined;
+      const nativeScan = nativeFor(compiled);
       let batch: ScannedChapter[] = [];
       let batchStart = 0;
       let lastYield = performance.now();
@@ -250,20 +307,7 @@ export function createSearchSession(book: Book, options: SearchBookOptions = {})
             for (const hit of found) results.push(hit);
           }
         } else if (path && projection) {
-          let chapter = cache.get(index);
-          if (!chapter) {
-            const source = await textFor(path, signal);
-            abortIfNeeded(signal);
-            if (source !== undefined) {
-              const { text, segments } = await extractSearchTextSegments(source);
-              abortIfNeeded(signal);
-              if (disposed) throw new DOMException("搜索会话已释放", "AbortError");
-              const sourceDoc = buildDocument(text);
-              const projected = projection.projectChapter(text, segments);
-              chapter = { source: sourceDoc, display: projected.text === text ? sourceDoc : buildDocument(projected.text), projected };
-              cache.set(index, chapter);
-            }
-          }
+          const chapter = await projectedChapter(index, path, signal);
           if (chapter) {
             const found = projectedMatches(chapter, compiled, index, path, titleFor(book, path), projection.version, maxResults - results.length);
             for (const hit of found) results.push(hit);
@@ -282,6 +326,7 @@ export function createSearchSession(book: Book, options: SearchBookOptions = {})
     },
     dispose(): void {
       disposed = true;
+      readerQuery?.cancel();
       warmJob?.abort();
       cache.clear();
       plain.clear();

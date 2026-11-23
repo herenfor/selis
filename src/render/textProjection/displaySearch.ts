@@ -3,7 +3,7 @@ import {
   type ProjectedSearchChapter,
   type SearchBookOptions,
   type SearchProjection,
-  type SearchSession,
+  type ReaderSearchSession,
 } from "../../core/search";
 import type { SearchTextSegment } from "../../core/corpus";
 import type { Book } from "../../core/types";
@@ -152,7 +152,7 @@ export function createTextSearchSession(
   view: TextSearchView,
   projection: CompiledTextProjection | null,
   options: DisplaySearchSessionOptions = {},
-): SearchSession {
+): ReaderSearchSession {
   if (view === "display" && projection) {
     return createDisplaySearchSession(book, projection, options);
   }
@@ -168,7 +168,7 @@ export function createDisplaySearchSession(
   book: Book,
   projection: CompiledTextProjection,
   options: DisplaySearchSessionOptions = {},
-): SearchSession {
+): ReaderSearchSession {
   return createSearchSession(book, {
     ...options,
     projection: new CompiledTextSearchProjection(projection),

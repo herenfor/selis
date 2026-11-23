@@ -1,4 +1,4 @@
-import type { ScanChapters, ScannedChapter } from "../core/readerSearchSource";
+import type { ScanChapters, ScannedChapter, NativeResultRequest } from "../core/readerSearchSource";
 /** Native Android archive session client used by the reader and corpus Worker. */
 import {
   ArchiveClosedError,
@@ -170,7 +170,7 @@ class NativeArchiveClient implements ArchiveClient {
 
   scanChapters?: ScanChapters;
 
-  async scan(paths: readonly string[], phrase: string, tokens: string[], signal?: AbortSignal): Promise<ScannedChapter[]> {
+  async scan(paths: readonly string[], phrase: string, tokens: string[], signal?: AbortSignal, request?: NativeResultRequest): Promise<ScannedChapter[]> {
     const results: ScannedChapter[] = paths.map(() => ({ kind: "compatibility" }));
     const jobs = paths.flatMap((path, position) => {
       const entry = this.directory.get(path);
@@ -186,7 +186,7 @@ class NativeArchiveClient implements ArchiveClient {
         this.requireOpen();
         checkEntryRead(signal);
         const rows = await this.invoke<ScannedChapter[]>("reader_search_batch", {
-          sessionId: this.info.sessionId, indices: batch.map(job => job.entry.entryIndex), phrase, tokens,
+          sessionId: this.info.sessionId, indices: batch.map(job => job.entry.entryIndex), phrase, tokens, ...(request && { request }),
         });
         this.requireOpen();
         checkEntryRead(signal);

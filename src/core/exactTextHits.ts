@@ -82,7 +82,7 @@ export function createChapterHitResolver(source: string) {
     offset += point.length;
     offsets[offset] = points.length;
   }
-  return (ranges: readonly RawTextRange[]): ExactTextHitsAndPoints | null => {
+  const resolve = (ranges: readonly RawTextRange[]): ExactTextHitsAndPoints | null => {
     const hits: ExactTextHit[] = [];
     for (const range of ranges) {
       const start = offsets[range.start], end = offsets[range.end];
@@ -91,6 +91,10 @@ export function createChapterHitResolver(source: string) {
     }
     return hits.length ? { points, hits } : null;
   };
+  return Object.assign(resolve, {
+    offsetAt: (raw: number) => offsets[raw],
+    covers: (range: RawTextRange) => offsets[range.end] > offsets[range.start],
+  });
 }
 
 /** Compatibility wrapper for callers that only need the mapped ranges. */

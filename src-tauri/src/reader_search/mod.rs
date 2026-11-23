@@ -1,7 +1,11 @@
-//! Per-open-archive reader search. The cache owns text only and dies with the archive.
+//! Per-open-archive search. Text and compact hit ranges are released with the archive.
+mod results;
+mod target;
 mod text;
 use crate::native_zip_session::{Fault, NativeZipSession, CHUNK_BYTES};
 use memchr::memmem::Finder;
+pub(crate) use results::Request;
+use results::{IndexCache, Matches, WindowRow};
 use serde::Serialize;
 use std::{
     collections::{HashMap, VecDeque},
@@ -13,6 +17,7 @@ use text::Chapter;
 pub(crate) struct SearchCache {
     entries: HashMap<usize, Option<Arc<Chapter>>>,
     order: VecDeque<usize>,
+    indices: IndexCache,
     bytes: usize,
 }
 fn charge(chapter: &Option<Arc<Chapter>>) -> usize {
@@ -45,6 +50,12 @@ impl SearchCache {
 pub(crate) enum Scan {
     Miss,
     Compatibility,
+    Count {
+        count: usize,
+    },
+    Window {
+        rows: Vec<WindowRow>,
+    },
     Match {
         text: String,
         starts: Option<Vec<u32>>,
@@ -95,8 +106,11 @@ pub(crate) fn batch(
     indices: &[usize],
     query: &str,
     tokens: &[String],
+    request: Option<Request>,
 ) -> Result<Vec<Scan>, Fault> {
-    if indices.len() > 32
+    if matches!(&request, Some(Request::Window { limit, include_target, .. }) if *limit > 128 || (*include_target && *limit != 1) || indices.len() != 1)
+        || request.is_some() && (query.is_empty() || tokens.iter().any(String::is_empty))
+        || indices.len() > 32
         || query.len() > 16384
         || tokens.len() > 128
         || tokens.iter().map(String::len).sum::<usize>() > 16384
@@ -104,13 +118,22 @@ pub(crate) fn batch(
         return Err(Fault::InvalidRequest);
     }
     let phrase = Finder::new(query);
-    let tokens: Vec<_> = tokens.iter().map(Finder::new).collect();
+    let finders: Vec<_> = tokens.iter().map(Finder::new).collect();
     let cache: &Mutex<SearchCache> = &session.reader_search;
     indices
         .iter()
         .map(|&index| {
             if index >= session.entry_count || session.is_closed() {
                 return Err(Fault::InvalidRequest);
+            }
+            let lookup = || -> Result<_, Fault> {
+                let mut guard = cache.lock().map_err(|_| Fault::Closed)?;
+                guard.indices.select(query, tokens);
+                Ok(guard.indices.get(index))
+            };
+            let indexed = if request.is_some() { lookup()? } else { None };
+            if let (Some(hits), Some(Request::Count)) = (&indexed, &request) {
+                return Ok(Scan::Count { count: hits.len() });
             }
             let cached = cache
                 .lock()
@@ -134,13 +157,39 @@ pub(crate) fn batch(
                     c
                 }
             };
-            Ok(chapter.as_ref().map_or(Scan::Compatibility, |c| {
-                if query.is_empty() {
-                    Scan::Miss
-                } else {
-                    scan(c, &phrase, &tokens)
-                }
-            }))
+            let Some(chapter) = chapter else {
+                return Ok(Scan::Compatibility);
+            };
+            if let Some(req) = &request {
+                let hits = match indexed {
+                    Some(hits) => hits,
+                    None => {
+                        let hits = Arc::new(Matches::build(&chapter, &phrase, &finders));
+                        let mut guard = cache.lock().map_err(|_| Fault::Closed)?;
+                        guard.indices.select(query, tokens);
+                        guard.indices.put(index, hits.clone());
+                        hits
+                    }
+                };
+                Ok(match req {
+                    Request::Count => Scan::Count { count: hits.len() },
+                    Request::Window {
+                        offset,
+                        limit,
+                        include_target,
+                    } => Scan::Window {
+                        rows: results::excerpts(
+                            &chapter.text,
+                            hits.window(*offset, *limit),
+                            *include_target,
+                        ),
+                    },
+                })
+            } else if query.is_empty() {
+                Ok(Scan::Miss)
+            } else {
+                Ok(scan(&chapter, &phrase, &finders))
+            }
         })
         .collect()
 }

@@ -143,24 +143,41 @@ impl Chapter {
         visible.walk(doc.root_element(), 0)?;
         let text = visible.text;
         let mut normalized = String::with_capacity(text.len());
-        let nfkc = ComposingNormalizer::new_nfkc();
-        for c in text.chars() {
-            if c.is_whitespace() || c == '\u{ad}' {
-                continue;
-            }
-            if c.is_ascii() || ('\u{4e00}'..='\u{9fff}').contains(&c) {
-                normalized.push(c.to_ascii_lowercase());
-            } else {
-                for v in nfkc
-                    .normalize_iter(std::iter::once(c))
-                    .flat_map(char::to_lowercase)
-                {
-                    if !v.is_whitespace() && v != '\u{ad}' {
-                        normalized.push(v);
-                    }
+        for_normalized(&text, |point, _| normalized.push(point));
+        Some(Self { text, normalized })
+    }
+}
+
+impl Chapter {
+    pub(super) fn raw_byte_spans(&self) -> Vec<[u32; 2]> {
+        let mut spans = Vec::with_capacity(self.normalized.len());
+        for_normalized(&self.text, |c, raw| {
+            spans.resize(spans.len() + c.len_utf8(), raw)
+        });
+        spans
+    }
+}
+
+fn for_normalized(text: &str, mut emit: impl FnMut(char, [u32; 2])) {
+    let nfkc = ComposingNormalizer::new_nfkc();
+    let mut end = 0u32;
+    for c in text.chars() {
+        let start = end;
+        end += c.len_utf16() as u32;
+        if c.is_whitespace() || c == '\u{ad}' {
+            continue;
+        }
+        if c.is_ascii() || ('\u{4e00}'..='\u{9fff}').contains(&c) {
+            emit(c.to_ascii_lowercase(), [start, end]);
+        } else {
+            for point in nfkc
+                .normalize_iter(std::iter::once(c))
+                .flat_map(char::to_lowercase)
+            {
+                if !point.is_whitespace() && point != '\u{ad}' {
+                    emit(point, [start, end]);
                 }
             }
         }
-        Some(Self { text, normalized })
     }
 }

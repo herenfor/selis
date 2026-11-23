@@ -145,3 +145,41 @@ describe("current-book search core", () => {
     await expect(searchBook(book, "abc", { signal: controller.signal, yieldToHost: async () => {} })).rejects.toMatchObject({ name: "AbortError" });
   });
 });
+
+
+describe("reader query result windows", () => {
+  it("publishes a stable prefix before the next chapter and resumes through the last occurrence", async () => {
+    const book = fakeBook([`<p>${"猫".repeat(102)}</p>`, "<p>😀<ruby>猫<rt>ねこ</rt></ruby></p>"]);
+    const session = createSearchSession(book);
+    const query = session.startQuery("猫", { onUpdate(snapshot) {
+      if (snapshot.status === "scanning" && snapshot.completed === 1) query.pause();
+    } });
+    try {
+      expect(await query.finished).toMatchObject({ status: "paused", count: 102, completed: 1 });
+      expect(await query.window(101, 2)).toHaveLength(1);
+      expect(await query.resume()).toMatchObject({ status: "complete", count: 103, completed: 2 });
+      const rows = await query.window(101, 2);
+      expect(rows.map(row => row.spineIndex)).toEqual([0, 1]);
+      expect(rows[1]).not.toHaveProperty("occurrence");
+      expect(await query.resolve(102)).toMatchObject({ spineIndex: 1, originalRange: { start: 2, end: 3 }, matchedText: "猫" });
+      session.startQuery("新词");
+      await expect(query.resolve(102)).rejects.toMatchObject({ name: "AbortError" });
+    } finally { session.dispose(); }
+  });
+
+  it("keeps published hits on chapter failure and retries from that chapter", async () => {
+    let unavailable = true;
+    const session = createSearchSession(fakeBook(["", ""]), { textFor: path => {
+      if (path.endsWith("c1.xhtml") && unavailable) return undefined;
+      return "<p>ﬃ</p>";
+    } });
+    const query = session.startQuery("f");
+    try {
+      expect(await query.finished).toMatchObject({ status: "error", completed: 1, count: 1 });
+      expect(await query.window(0, 5)).toHaveLength(1);
+      unavailable = false;
+      expect(await query.resume()).toMatchObject({ status: "complete", completed: 2, count: 2 });
+      expect(await query.resolve(1)).toMatchObject({ matchedText: "ﬃ", spineIndex: 1 });
+    } finally { session.dispose(); }
+  });
+});

@@ -353,10 +353,11 @@ pub async fn reader_search_batch(
     indices: Vec<usize>,
     phrase: String,
     tokens: Vec<String>,
+    request: Option<crate::reader_search::Request>,
 ) -> Result<Vec<crate::reader_search::Scan>, LinkedLibraryError> {
     let session = native_archive_session(&app, window.label(), &session_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        crate::reader_search::batch(&session, &indices, &phrase, &tokens).map_err(archive_fault_error)
+        crate::reader_search::batch(&session, &indices, &phrase, &tokens, request).map_err(archive_fault_error)
     })
     .await
     .map_err(|error| format!("书内搜索线程失败：{error}"))?
