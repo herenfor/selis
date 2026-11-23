@@ -255,6 +255,9 @@ describe("Issue #16 / ER-0228 search panel", () => {
     }));
     expect(markup).toContain("search-origin-switch");
     expect(markup).toContain("搜索原文");
+    // The app-wide switch, in the header next to close — not a bare checkbox row.
+    expect(markup).toContain("search-head-actions");
+    expect(markup).toContain("ui-switch");
     expect(markup).not.toContain("search-view-toggle");
     // A book without an active projection has no switch at all.
     const plain = renderToStaticMarkup(createElement(SearchPanel, { ...basePanel }));

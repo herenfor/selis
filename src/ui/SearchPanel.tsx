@@ -3,6 +3,7 @@ import { MENU_CLOSE_MS } from "./menuMotion";
 import { useSheetDrag } from "./sheetDrag";
 import type { KeyboardEvent } from "react";
 import { CloseIcon } from "./readerIcons";
+import { Switch } from "./controls/Switch";
 import { uiText, useUiText } from "./localization/UiLanguageProvider";
 import "./searchResults.css";
 
@@ -697,20 +698,26 @@ export function SearchPanel(props: SearchPanelProps) {
               </span>
             )}
           </div>
-          <button className="tb-btn tb-close" type="button" onClick={props.onClose} aria-label={t("search.close")} title={t("search.close")}>
-            <CloseIcon size={14} />
-          </button>
+          <div className="search-head-actions">
+            {props.onSearchViewChange && (
+              <label
+                className="search-origin-switch"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <span className="search-origin-label">{t("search.view.originalSwitch")}</span>
+                <Switch
+                  inRow
+                  checked={props.searchView === "original"}
+                  label={t("search.view.originalSwitch")}
+                  onChange={(checked) => props.onSearchViewChange?.(checked ? "original" : "display")}
+                />
+              </label>
+            )}
+            <button className="tb-btn tb-close" type="button" onClick={props.onClose} aria-label={t("search.close")} title={t("search.close")}>
+              <CloseIcon size={14} />
+            </button>
+          </div>
         </div>
-        {props.onSearchViewChange && (
-          <label className="search-origin-switch">
-            <input
-              type="checkbox"
-              checked={props.searchView === "original"}
-              onChange={(event) => props.onSearchViewChange?.(event.target.checked ? "original" : "display")}
-            />
-            <span>{t("search.view.originalSwitch")}</span>
-          </label>
-        )}
         <div className="search-input-wrap">
           <input
             ref={inputRef}

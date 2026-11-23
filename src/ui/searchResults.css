@@ -17,15 +17,32 @@
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, var(--btn-tint));
 }
-.search-origin-switch {
+.search-head-actions {
   display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+/* 「搜索原文」只改搜索范围，是标题栏里的次级开关：用全应用统一的 Switch，
+   与计数徽标同字号，垂直居中在标题和关闭按钮之间。 */
+.search-origin-switch {
+  display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 8px;
-  flex: none;
-  margin-top: 6px;
-  padding: 0 18px;
   color: var(--muted);
   font-size: var(--fs-caption);
+  font-weight: 500;
   cursor: pointer;
+  user-select: none;
 }
-.search-origin-switch input { accent-color: var(--accent); }
+.search-origin-switch:hover,
+.search-origin-switch:has(input:checked) { color: var(--fg); }
+.app[data-touch-ui="true"] .search-origin-switch {
+  min-height: 40px;
+  padding: 0 4px;
+  margin: 0 -4px;
+}
+@media (max-width: 380px) {
+  .search-origin-label { display: none; }
+}
