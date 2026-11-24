@@ -69,6 +69,7 @@ import { installPagedSwipe, PAGED_SWIPE_THRESHOLD_PX } from "../render/pagedSwip
 import { ChapterSeam, type ExternalSeam, type SeamMotion } from "./chapterSeam";
 import { ChapterFillIndex, chapterFillEntries } from "../render/chapterFill";
 import { ChapterPreloadSchedule } from "./chapterPreloadSchedule";
+import { useSeamPreparation } from "./useSeamPreparation";
 import { planFrontRun } from "./frontRunPlan";
 import { canJoinChapters, chapterFillLayoutKey, joinLaneClip, type JoinLeaves } from "./chapterJoin";
 import { PAGED_LAYER, planPresentationLayers, planSeamTrack, standbyReaderProps, type PagedLayerKey, type PresentationLayer, type PresentationPlan } from "./presentationStack";
@@ -2931,6 +2932,14 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   }, [settings.preloadNextChapter, book.fixedLayout, settings.readingMode, activeFrame, props.presentationStandby,
     props.standbyPrepareThrough]);
 
+  // 相邻章分类是异步的：恢复在章末时预读计时器（16ms）往往先跑完，邻章被当成
+  // 未分类而跳过。分类完成后用新的 seamTargetEligible 身份重排一次，第一次章边
+  // 翻页才来得及用上覆盖联动。
+  useEffect(() => {
+    if (preloadAllowedRef.current) queueAdjacentPreloads(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the classification identity should re-run it.
+  }, [props.seamTargetEligible]);
+
   // Keep the stable reader container (not a promoted chapter iframe) as the
   // resize target. The paginator restores its last stable reading anchor.
   useEffect(() => {
@@ -3796,8 +3805,8 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const seamTurnPossible = props.settings.preloadNextChapter === true && props.settings.seamlessChapterTurn === true &&
     (seamTurnAnimation === "slide" || seamTurnAnimation === "cover") && !prefersReducedMotion();
   const seamPossible = seamTurnPossible && seamTurnAnimation === "slide";
-  const seamTargetEligible = useCallback((index: number) => !spreadsShown || imageSpreads.peek(index) === null,
-    [spreadsShown, imageSpreads]);
+  const [classifiedTick, setClassifiedTick] = useState(0);
+  const bumpClassified = useCallback(() => setClassifiedTick((tick) => tick + 1), []);
   // A13-2：章边拼接只在普通正文之间；A13 并排组是独立边界（配对从它之后重新开始）。
   const chapterFillKind = useCallback((index: number): "ordinary" | "isolated" | undefined => {
     if (!spreadsShown) return "ordinary";
@@ -3810,7 +3819,6 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   }, [spreadsShown, imageSpreads]);
   // A16 第二阶段：连续滑动 + 双页时，外层同时保留当前显示与相邻显示层（见 presentationStack）。
   const stackOn = seamPossible && spreadsShown && props.settings.readingMode !== "scroll" && !props.book.fixedLayout;
-  const [classifiedTick, setClassifiedTick] = useState(0);
   // Keep whichever ordinary layer just landed as the resident reader. A
   // reverse seam must not discard that prepared document and reload another.
   const pagedLayerKey = useRef<PagedLayerKey>(PAGED_LAYER);
@@ -3851,24 +3859,19 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const lookaheadIndex = plan?.lookaheadIndex ?? -1;
   const parkedIndex = plan?.layers.find((layer) => layer.kind === "paged")?.spineIndex ?? -1;
   const frontRunWaiting = frontRun?.waitingFor ?? -1;
-  useEffect(() => {
-    if (!spreadsShown || !seamTurnPossible) return;
-    // 提前分类相邻显示单元（只读 XHTML），让章边联动知道它们是否会并排；分好后重新规划。
-    const controller = new AbortController();
-    const first = pair?.left ?? props.spineIndex;
-    const last = pair ? pair.right ?? pair.left : props.spineIndex;
-    const wanted = [nextLinearIndex(props.book, last, 1), nextLinearIndex(props.book, first, -1), parkedIndex, lookaheadIndex];
-    // The front-run plan waits for one chapter's classification at a time.
-    if (frontRunWaiting >= 0) wanted.push(frontRunWaiting);
-    for (const index of wanted) {
-      if (index >= 0 && imageSpreads.peek(index) === undefined) {
-        void imageSpreads.resolve(index, controller.signal).then(() => {
-          if (!controller.signal.aborted) setClassifiedTick((tick) => tick + 1);
-        }, () => {});
-      }
-    }
-    return () => controller.abort();
-  }, [imageSpreads, props.book, props.spineIndex, pair, parkedIndex, lookaheadIndex, spreadsShown, seamTurnPossible, classifiedTick, frontRunWaiting]);
+  const seamTargetEligible = useSeamPreparation({
+    book: props.book,
+    spineIndex: props.spineIndex,
+    spreadsShown,
+    seamTurnPossible,
+    imageSpreads,
+    pair,
+    parkedIndex,
+    lookaheadIndex,
+    frontRunWaiting,
+    revision: classifiedTick,
+    onClassified: bumpClassified,
+  });
   const tapGeometry = useMemo(() => createReaderTapGeometry(width, props.tapRegions), [width, props.tapRegions]);
   const bookProgression = effectivePageProgression(props.book.pageProgression, props.settings, props.book.fixedLayout);
   // 点击翻页区按本章实际方向映射（竖排书元数据没写方向时与元数据不同）。

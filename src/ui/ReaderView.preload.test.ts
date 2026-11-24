@@ -117,6 +117,27 @@ vi.mock("../render/paginator", () => ({
 }));
 import { ReaderView, type ReaderHandle } from "./ReaderView";
 
+function classifiedNext(container: HTMLElement, index: number): boolean {
+  const reader = container.querySelector(".reader") as (HTMLElement & Record<string, unknown>) | null;
+  if (!reader) return false;
+  const key = Object.keys(reader).find((name) => name.startsWith("__reactFiber$"));
+  let fiber = key ? (reader[key] as { memoizedState?: unknown; return?: unknown } | undefined) : undefined;
+  while (fiber) {
+    let hook = fiber.memoizedState as { memoizedState?: unknown; next?: unknown } | undefined;
+    while (hook) {
+      const state = hook.memoizedState;
+      const candidate = Array.isArray(state) ? state[0] : state;
+      if (candidate && typeof candidate === "object" && "peek" in candidate &&
+        typeof (candidate as { peek: unknown }).peek === "function") {
+        return (candidate as { peek(i: number): unknown }).peek(index) === null;
+      }
+      hook = hook.next as typeof hook;
+    }
+    fiber = fiber.return as typeof fiber;
+  }
+  return false;
+}
+
 describe("ReaderView preload settings lifecycle", () => {
   let dom: ReturnType<typeof createReactDomHarness>;
   let props: ComponentProps<typeof ReaderView>;
@@ -203,6 +224,11 @@ describe("ReaderView preload settings lifecycle", () => {
     await renderReader();
     const active = instances[0];
     await finish(active);
+    // The classification and the preload re-trigger are both asynchronous; wait
+    // for the neighbour slot to exist before completing it.
+    for (let i = 0; i < 20 && !instances.some(p => p.path === "1.xhtml"); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    }
     const next = instances.find(p => p.path === "1.xhtml")!;
     await finish(next);
     const animations: Array<() => void> = [];
@@ -240,6 +266,11 @@ describe("ReaderView preload settings lifecycle", () => {
     await renderReader();
     const active = instances[0];
     await finish(active);
+    // The classification and the preload re-trigger are both asynchronous; wait
+    // for the neighbour slot to exist before completing it.
+    for (let i = 0; i < 20 && !instances.some(p => p.path === "1.xhtml"); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    }
     const next = instances.find(p => p.path === "1.xhtml")!;
     await finish(next);
     const animations: Array<() => void> = [];
@@ -285,6 +316,9 @@ describe("ReaderView preload settings lifecycle", () => {
       constructor(callback: () => void) { resizeCallbacks.push(callback); }
       observe() {} unobserve() {} disconnect() {}
     });
+    // The classifier parses XHTML; use linkedom's DOMParser instead of the
+    // lazily imported Node parser so the result lands within fake timers.
+    vi.stubGlobal("DOMParser", dom.window.DOMParser);
     const handle = createRef<ReaderHandle>();
     const renderReader = () => dom.render(createElement(ReaderView, { ...props, ref: handle }));
     await renderReader();
@@ -293,9 +327,18 @@ describe("ReaderView preload settings lifecycle", () => {
     await act(async () => { for (const callback of resizeCallbacks) callback(); });
     // The adjacent-chapter classification reads XHTML asynchronously before the
     // chapter edge is reachable; without it the neighbour counts as an A13 spread.
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    for (let i = 0; i < 50; i++) {
+      if (classifiedNext(dom.container, 1)) break;
+      await act(async () => { await vi.advanceTimersByTimeAsync(20); await Promise.resolve(); });
+    }
+    expect(classifiedNext(dom.container, 1)).toBe(true);
     const active = instances[0];
     await finish(active);
+    // The classification and the preload re-trigger are both asynchronous; wait
+    // for the neighbour slot to exist before completing it.
+    for (let i = 0; i < 20 && !instances.some(p => p.path === "1.xhtml"); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    }
     const next = instances.find(p => p.path === "1.xhtml")!;
     await finish(next);
     const animations: Array<() => void> = [];
