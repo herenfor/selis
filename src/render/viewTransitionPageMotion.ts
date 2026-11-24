@@ -100,6 +100,8 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
   private readonly doc: Document;
   private readonly win: Window | null;
   private readonly style: HTMLStyleElement | null;
+  private hostOverlay: HTMLElement | null = null;
+  private hostOverlayZIndex = "";
 
   static supported(doc: Document | null | undefined): boolean {
     return Boolean(doc && typeof (doc as ViewTransitionDocument).startViewTransition === "function");
@@ -189,6 +191,7 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
       this.cancelFrame(turn);
       this.options.writeRest(turn.origin);
       try { turn.transition.skipTransition(); } catch { /* already finished */ }
+      this.restoreHostOverlay();
       this.cleanup();
     }
     this.options.writeRest(position);
@@ -208,6 +211,7 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
       this.options.writeRest(turn.origin);
       try { turn.transition.skipTransition(); } catch { /* already finished */ }
     }
+    this.restoreHostOverlay();
     this.cleanup();
     this.options.viewer.style.removeProperty("view-transition-name");
     this.style?.remove();
@@ -228,6 +232,10 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     const origin = this.options.offsets[currentPage];
     const target = this.options.offsets[targetPage];
     const physicalNext = direction * pageAxisSign(this.options.progression) === 1;
+    // WebView2/Chromium skips a View Transition when the iframe document is
+    // covered by another element. The transparent seam input overlay sits
+    // above the active iframe (z-index 3); lower it while the cover runs.
+    this.suspendHostOverlay();
     this.doc.documentElement.style.setProperty("--reader-turn-bg", this.pageBackground());
     this.doc.documentElement.dataset.turnMode = "cover";
     this.doc.documentElement.dataset.turnDirection = physicalNext ? "next" : "prev";
@@ -235,6 +243,7 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     try {
       transition = startViewTransition.call(this.doc, () => this.options.preview(target));
     } catch (error) {
+      this.restoreHostOverlay();
       this.cleanup();
       this.options.onFault(error);
       return;
@@ -321,6 +330,7 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     this.cancelFrame(turn);
     if (!completed) this.options.writeRest(turn.origin);
     try { turn.transition.skipTransition(); } catch { /* already finished */ }
+    this.restoreHostOverlay();
     this.cleanup();
     done();
   }
@@ -332,11 +342,13 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     this.cancelFrame(turn);
     this.options.writeRest(turn.origin);
     try { turn.transition.skipTransition(); } catch { /* already finished */ }
+    this.restoreHostOverlay();
     this.cleanup();
   }
 
   private fail(error: unknown): void {
     this.turn = null;
+    this.restoreHostOverlay();
     this.cleanup();
     this.options.onFault(error);
   }
@@ -376,6 +388,30 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
 
   private now(): number {
     return this.win?.performance?.now() ?? Date.now();
+  }
+
+  /**
+   * The seam input surface is a transparent host overlay above the active
+   * iframe. WebView2 skips the iframe's View Transition while that overlay
+   * covers it, so take it below the iframe for the duration of the turn.
+   */
+  private suspendHostOverlay(): void {
+    const frame = this.doc.defaultView?.frameElement as HTMLElement | null;
+    const host = frame?.closest(".reader-presentation-host") as HTMLElement | null;
+    const overlay = (host?.querySelector(":scope > .reader-seam-input") ??
+      frame?.ownerDocument.querySelector(".reader-seam-input")) as HTMLElement | null;
+    if (!overlay) return;
+    this.hostOverlay = overlay;
+    this.hostOverlayZIndex = overlay.style.zIndex;
+    overlay.style.zIndex = "0";
+  }
+
+  private restoreHostOverlay(): void {
+    const overlay = this.hostOverlay;
+    if (!overlay) return;
+    this.hostOverlay = null;
+    if (this.hostOverlayZIndex) overlay.style.zIndex = this.hostOverlayZIndex;
+    else overlay.style.removeProperty("z-index");
   }
 
   private cleanup(): void {
