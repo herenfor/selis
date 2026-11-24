@@ -68,6 +68,8 @@
   "aa.forceHorizontal.hint": "Vertical layout is experimental; turn this on to read such books horizontally",
   "aa.pageDirectionLtr": "Always Turn Pages Left to Right",
   "aa.pageDirectionLtr.hint": "When off, follow the book: in right-to-left books (such as vertical CJK), tap the left side or press ← for the next page",
+  "aa.fullBleedImages": "Full-screen Cover and Illustrations",
+  "aa.fullBleedImages.hint": "Covers and single-picture pages fill the reading area; turn off to keep page margins and reduce accidental edge taps",
   "aa.motion": "Reduce Interface Motion",
   "aa.motion.hint": "Removes frosted glass and hover effects and shortens panel animations; page turns are unaffected",
   "aa.preload": "High-Performance Preloading",

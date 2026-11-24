@@ -1,6 +1,18 @@
 import { hasAuthoredCssProperty } from "./cssRewrite";
 import { childElements, findElements, localNameOf, type XmlElementLike } from "../core/xml";
 
+/** OPF spine properties Duokan uses for one picture page that fills the screen. */
+const FULL_PAGE_SPINE_PROPERTIES = new Set(["duokan-page-fullscreen", "duokan-page-fitwindow"]);
+
+/**
+ * The spine is authoritative for Duokan full-page art. The content heuristic
+ * below still decides the actual layout, but these properties let a picture
+ * page with authored dimensions opt into the same full-page treatment.
+ */
+export function hasFullPageSpineProperty(properties: readonly string[] | undefined): boolean {
+  return properties?.some((property) => FULL_PAGE_SPINE_PROPERTIES.has(property)) === true;
+}
+
 /** An authored full-page picture followed only by its link caption. */
 export function linkedImagePage(page: XmlElementLike): XmlElementLike | null {
   if (localNameOf(page) !== "a" || !page.getAttribute("href")) return null;

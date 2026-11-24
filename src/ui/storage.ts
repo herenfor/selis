@@ -95,6 +95,8 @@ export interface SavedSettings {
   turnAnimation?: "slide" | "fade" | "none";
   /** 翻页方向；旧设置缺省为跟随书籍。只存本机，不进存档。 */
   pageDirection?: "book" | "ltr";
+  /** 封面/单图页全屏铺满；旧设置缺省为开启。只存本机，不进存档。 */
+  fullBleedImages?: boolean;
   /** 阅读方式；旧设置缺省为分页 */
   readingMode?: ReadingMode;
   /** 阅读器视口四边留白；未设置的边沿用旧默认 */
@@ -136,6 +138,7 @@ export function toSavedReaderSettings(settings: ReaderSettings, uiScale: number)
     seamlessChapterTurn: settings.seamlessChapterTurn === true,
     turnAnimation: normalizeTurnAnimation(settings.turnAnimation),
     pageDirection: normalizePageDirection(settings.pageDirection),
+    fullBleedImages: settings.fullBleedImages !== false,
     readingMode: settings.readingMode === "scroll" ? "scroll" : "paginated",
     pageMarginsPx: settings.pageMarginsPx,
     columnsPerView: settings.columnsPerView === 2 ? 2 : 1,

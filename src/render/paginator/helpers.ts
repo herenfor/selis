@@ -2312,6 +2312,8 @@ export interface ChapterPaginatorOptions {
   onIssues?: (issues: string[], unresolvedResources: readonly string[]) => void;
   /** 固定版式书：不做行宽自适应，整页显示 */
   fixedLayout?: boolean;
+  /** Resolve a chapter path's OPF spine properties (Duokan full-page art). */
+  spinePropertiesFor?: (path: string) => readonly string[] | undefined;
   /** OPF page progression; logical page/locator identities stay unchanged. */
   pageProgression?: PageProgression;
   /** 书内链接点击回调（已解析为书内路径，含可选锚点），供阅读器跳转 */

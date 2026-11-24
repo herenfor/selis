@@ -142,4 +142,20 @@ describe("reader settings extracted from App", () => {
       await t.dom.dispose();
     }
   });
+
+  it("defaults full-screen pictures on for old settings and persists the switch", async () => {
+    const t = setup();
+    try {
+      writeSavedSettings({ theme: "dark" });
+      await t.dom.render(createElement(Host, { api: t.api }));
+      expect(t.current().settings.fullBleedImages).toBe(true);
+      await t.dom.run(() => t.current().settingsActions.setFullBleedImages(false));
+      expect(t.current().settings.fullBleedImages).toBe(false);
+      expect(readSavedSettings().fullBleedImages).toBe(false);
+      await t.dom.run(() => t.current().settingsActions.setFullBleedImages(true));
+      expect(readSavedSettings().fullBleedImages).toBe(true);
+    } finally {
+      await t.dom.dispose();
+    }
+  });
 });

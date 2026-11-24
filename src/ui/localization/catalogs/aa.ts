@@ -97,6 +97,8 @@ export const aa = defineMessages("aa", {
   "aa.forceHorizontal.hint": { zh: "竖排显示是实验性功能；排版不理想时打开此开关，改为横排阅读", note: "Help text under the switch: vertical layout is experimental; turn this on to read horizontally." },
   "aa.pageDirectionLtr": "始终从左往右翻页",
   "aa.pageDirectionLtr.hint": { zh: "关闭时跟随书籍：台版竖排等从右往左翻的书，点左侧和按 ← 是下一页", note: "Help text under the switch. Off = follow the book's page-progression-direction." },
+  "aa.fullBleedImages": "全屏显示插图与封面",
+  "aa.fullBleedImages.hint": { zh: "封面和单图页铺满阅读区域；关闭后保留页边距，减少边缘误触", note: "Help text under the switch: covers and single-picture pages fill the reading area; turn off to keep page margins and reduce accidental edge taps." },
   "aa.motion": { zh: "简化界面动画", note: "Switch; same setting as the shelf's 'Interface animation: Reduced'.", max: 12 },
   "aa.motion.hint": { zh: "去掉毛玻璃与悬停动效，面板动画更短；翻页动画不受影响", note: "Help text under the switch." },
   "aa.preload": "高性能预读",

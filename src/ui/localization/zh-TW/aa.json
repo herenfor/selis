@@ -91,6 +91,8 @@
   "aa.forceHorizontal.hint": "豎排顯示是實驗性功能；排版不理想時開啟此開關，改為橫排閱讀",
   "aa.pageDirectionLtr": "始終從左往右翻頁",
   "aa.pageDirectionLtr.hint": "關閉時跟隨書籍：臺版豎排等從右往左翻的書，點左側和按 ← 是下一頁",
+  "aa.fullBleedImages": "全螢幕顯示插圖與封面",
+  "aa.fullBleedImages.hint": "封面和單圖頁鋪滿閱讀區域；關閉後保留頁邊距，減少邊緣誤觸",
   "aa.motion": "簡化介面動畫",
   "aa.motion.hint": "去掉毛玻璃與懸停動效，面板動畫更短；翻頁動畫不受影響",
   "aa.preload": "高效能預讀",

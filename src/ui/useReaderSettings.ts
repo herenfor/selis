@@ -49,6 +49,7 @@ export function useReaderSettings() {
       seamlessChapterTurn: saved.seamlessChapterTurn === true,
       turnAnimation: normalizeTurnAnimation(saved.turnAnimation),
       pageDirection: normalizePageDirection(saved.pageDirection),
+      fullBleedImages: saved.fullBleedImages !== false,
       // Normalize page options only at the saved-settings boundary.
       ...normalizePageOptions({
         readingMode: saved.readingMode,
@@ -101,6 +102,7 @@ export function useReaderSettings() {
       setForceHorizontal: (enabled: boolean) => setSettings((s2) => ({ ...s2, forceHorizontal: enabled })),
       setTxtIndent: (enabled: boolean) => setSettings((s2) => ({ ...s2, txtIndent: enabled })),
       setPageDirection: (pageDirection: PageDirectionSetting) => setSettings((s2) => ({ ...s2, pageDirection })),
+      setFullBleedImages: (enabled: boolean) => setSettings((s2) => ({ ...s2, fullBleedImages: enabled })),
       setPreloadNextChapter: (enabled: boolean) => setSettings((s2) => ({ ...s2, preloadNextChapter: enabled })),
       setSeamlessChapterTurn: (enabled: boolean) => setSettings((s2) => ({ ...s2, seamlessChapterTurn: enabled })),
       setCustomCss: (css: string) => setSettings((s2) => ({ ...s2, customCss: css })),

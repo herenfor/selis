@@ -352,5 +352,9 @@ describe("readerTheme: 纯颜色与在位更新核心", () => {
 
     // 6. userFonts 改变 -> 走 layout 重排
     expect(classifySettingsChange(base, base, "fontsA", "fontsB")).toBe("layout");
+
+    // 7. 全屏插图开关改变 -> 当前章需要重载才能应用/撤销铺满
+    expect(classifySettingsChange(base, { ...base, fullBleedImages: false })).toBe("layout");
+    expect(classifySettingsChange({ ...base, fullBleedImages: undefined }, { ...base, fullBleedImages: true })).toBe("none");
   });
 });

@@ -76,6 +76,11 @@ export interface ReaderSettings {
   turnAnimation?: TurnAnimation;
   /** 翻页方向：book 跟随书籍的 page-progression-direction；ltr 始终从左往右。undefined = book。 */
   pageDirection?: PageDirectionSetting;
+  /**
+   * 封面、单图页和多看全屏插图铺满阅读区域（去掉页边距）。undefined/true = 开启；
+   * false 保留页边距，减少全屏页面在屏幕边缘的误触。
+   */
+  fullBleedImages?: boolean;
 }
 
 export type PageDirectionSetting = "book" | "ltr";
@@ -126,6 +131,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   preloadNextChapter: false,
   turnAnimation: "slide",
   pageDirection: "book",
+  fullBleedImages: true,
 };
 
 /**
