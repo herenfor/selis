@@ -17,7 +17,6 @@ import { uiText } from "./localization/UiLanguageProvider";
 import { getAppBuildSession } from "../config/appBuildSession";
 import { watchAndroidForeground } from "../platform/androidAppTask";
 import { ComicPageRaster } from "./ComicPageRaster";
-import { PdfPageJump } from "./pdf/PdfPageJump";
 import "./comicReader.css";
 
 
@@ -794,7 +793,6 @@ export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(functio
         else if (route.kind === "bookmark") latest.current.onBookmarkCornerTap?.(route.side);
         else if (route.kind === "center" || (scroll && route.kind === "turn")) latest.current.onPlainTap?.();
       }}>{strip}</div>
-    {props.book.pdfPage && <PdfPageJump page={page} count={pages.length} jump={i => { navigationPending.current = true; locate(i); }} />}
     <BookmarkRibbonLayer marks={marks} cue={props.bookmarkCue ?? null} motion={moving}/>
   </div>;
 });

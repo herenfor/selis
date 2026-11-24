@@ -1,7 +1,6 @@
 import { defineMessages } from "../defineMessages";
 
 export const reader = defineMessages("reader", {
-  "reader.pdf.pageNumber": "跳转到页码",
   "reader.toc": "目录",
   "reader.bookmarks": "书签",
   "reader.notes": "笔记",
