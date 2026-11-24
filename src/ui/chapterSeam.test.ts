@@ -9,8 +9,10 @@ function fakeElement() {
   const element = {
     style: {
       setProperty: (name: string, value: string) => { styles.set(name, value); },
+      getPropertyValue: (name: string) => styles.get(name) ?? "",
       removeProperty: (name: string) => { styles.delete(name); },
     },
+    closest: () => null,
     ownerDocument: { defaultView: { getComputedStyle: () => ({ transform: "none" }) } },
     animate: () => {
       let resolve!: () => void;
@@ -23,18 +25,19 @@ function fakeElement() {
         effect: { getComputedTiming: () => ({ endTime: 260 }) }, updatePlaybackRate: speed };
     },
   };
-  return { element: element as unknown as HTMLElement, speed, transform: () => styles.get("transform") ?? null, runs };
+  return { element: element as unknown as HTMLElement, speed, transform: () => styles.get("transform") ?? null,
+    styleValue: (name: string) => styles.get(name) ?? null, runs };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function seam(direction: 1 | -1, progression: "ltr" | "rtl" = "ltr") {
+function seam(direction: 1 | -1, progression: "ltr" | "rtl" = "ltr", motion: "slide" | "cover" = "slide") {
   const current = fakeElement();
   const neighbor = fakeElement();
   const onSettled = vi.fn();
   const instance = new ChapterSeam({
     direction, current: current.element, neighbor: neighbor.element, width: 800, progression,
-    touch: true, onSettled, onFault: vi.fn(),
+    touch: true, motion, onSettled, onFault: vi.fn(),
   });
   const finishAll = async () => {
     for (const run of [...current.runs, ...neighbor.runs]) if (!run.cancelled) run.finish();
@@ -162,5 +165,87 @@ describe("ChapterSeam", () => {
     await flush();
     expect(onSettled).toHaveBeenCalledWith(false);
     expect(instance.settledScreen).toBeNull();
+  });
+
+  it("cover keeps the next chapter underneath and slides only the current page out", () => {
+    const { instance, current, neighbor } = seam(1, "ltr", "cover");
+    expect(current.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(neighbor.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(current.styleValue("z-index")).toBe("2");
+    expect(neighbor.styleValue("z-index")).toBe("1");
+    expect(current.styleValue("background-color")).toBe("#fff");
+    expect(current.styleValue("box-shadow")).toBe("34px 0 46px rgba(0, 0, 0, .38)");
+    expect(neighbor.styleValue("filter")).toBe("brightness(0.940)");
+    const ticket = instance.beginDrag(1)!;
+    instance.drag(ticket, -400);
+    expect(current.transform()).toBe("translate3d(-400px, 0, 0)");
+    expect(neighbor.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(neighbor.styleValue("filter")).toBe("brightness(0.970)");
+  });
+
+  it("cover turns back by sliding the current chapter right over the previous one", () => {
+    const { instance, current, neighbor } = seam(-1, "ltr", "cover");
+    expect(current.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(neighbor.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(current.styleValue("box-shadow")).toBe("-34px 0 46px rgba(0, 0, 0, .38)");
+    const ticket = instance.beginDrag(-1)!;
+    instance.drag(ticket, 400);
+    expect(current.transform()).toBe("translate3d(400px, 0, 0)");
+    expect(neighbor.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(neighbor.styleValue("filter")).toBe("brightness(0.970)");
+  });
+
+  it("cover mirrors the shadow and movement for right-to-left books", () => {
+    const { instance, current, neighbor } = seam(1, "rtl", "cover");
+    expect(current.styleValue("box-shadow")).toBe("-34px 0 46px rgba(0, 0, 0, .38)");
+    const ticket = instance.beginDrag(1)!;
+    instance.drag(ticket, -400);
+    expect(current.transform()).toBe("translate3d(400px, 0, 0)");
+    expect(neighbor.transform()).toBe("translate3d(0px, 0, 0)");
+  });
+
+  it("cover lands on the neighbour and clears its presentation on dispose", async () => {
+    const { instance, current, neighbor, onSettled, finishAll } = seam(1, "ltr", "cover");
+    const ticket = instance.beginDrag(1)!;
+    instance.drag(ticket, -500);
+    expect(instance.release(ticket, 1, 1.2)).toBe(true);
+    expect(current.runs).toHaveLength(1);
+    expect(neighbor.runs).toHaveLength(1);
+    await finishAll();
+    expect(onSettled).toHaveBeenCalledWith(true);
+    expect(current.transform()).toBe("translate3d(-800px, 0, 0)");
+    expect(neighbor.transform()).toBe("translate3d(0px, 0, 0)");
+    expect(neighbor.styleValue("filter")).toBe("brightness(1.000)");
+    instance.dispose();
+    expect(current.transform()).toBeNull();
+    expect(neighbor.transform()).toBeNull();
+    expect(current.styleValue("z-index")).toBeNull();
+    expect(current.styleValue("box-shadow")).toBeNull();
+    expect(neighbor.styleValue("filter")).toBeNull();
+  });
+
+  it("cover composes the reader's visual filter and restores it on dispose", () => {
+    const current = fakeElement();
+    const neighbor = fakeElement();
+    neighbor.element.style.setProperty("filter", 'url("#sepia")');
+    const instance = new ChapterSeam({ direction: 1, current: current.element, neighbor: neighbor.element,
+      width: 800, progression: "ltr", touch: true, motion: "cover", onSettled: vi.fn(), onFault: vi.fn() });
+    expect(neighbor.styleValue("filter")).toBe('url("#sepia") brightness(0.940)');
+    const ticket = instance.beginDrag(1)!;
+    instance.drag(ticket, -400);
+    expect(neighbor.styleValue("filter")).toBe('url("#sepia") brightness(0.970)');
+    instance.dispose();
+    expect(neighbor.styleValue("filter")).toBe('url("#sepia")');
+  });
+
+  it("cover ignores a longer prepared track so no third chapter shows through", () => {
+    const screens = [fakeElement(), fakeElement(), fakeElement()];
+    const instance = new ChapterSeam({ direction: 1, current: screens[0].element, neighbor: screens[1].element,
+      track: screens.map((screen) => screen.element), width: 800, progression: "ltr", touch: true,
+      motion: "cover", onSettled: vi.fn(), onFault: vi.fn() });
+    expect(screens[2].transform()).toBeNull();
+    expect(screens[0].transform()).toBe("translate3d(0px, 0, 0)");
+    expect(screens[1].transform()).toBe("translate3d(0px, 0, 0)");
+    instance.dispose();
   });
 });

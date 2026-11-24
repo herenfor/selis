@@ -22,15 +22,28 @@ import {
 } from "../render/pageMotion";
 import { pageAxisSign, type PageProgression } from "../render/pagedDirection";
 import { expediteChapterHandoff } from "../render/chapterHandoffMotion";
+import { surfaceBackground } from "./readerSurfaceBackground";
 
 const KEYFRAMES = 32;
+const COVER_SHADOW = "34px 0 46px rgba(0, 0, 0, .38)";
+const COVER_SHADOW_PREV = "-34px 0 46px rgba(0, 0, 0, .38)";
 
 type SeamElement = HTMLElement;
+
+function isTransparent(value: string): boolean {
+  return !value || value === "transparent" || value === "rgba(0, 0, 0, 0)";
+}
+
+/** 章边联动的呈现：滑动（两章并排移动）或覆盖（当前章滑出，下一章在下方露出）。 */
+export type SeamMotion = "slide" | "cover";
 
 /**
  * 若干屏的同步平移；与章内 TransformPageMotion 同一套中断/收尾约定。屏按阅读顺序排列，
  * 第 k 屏平移 s·(k·W − p)（s 为阅读方向，RTL 为 −1），p 为阅读偏移。两屏时即原来的
  * lead（−s·p）与 trail（s·(W−p)）。
+ *
+ * 覆盖模式只移动当前章那一屏：相邻章停在原位从下方露出，当前章带前缘阴影滑出，
+ * 露出的目标页随进度由 0.94 提亮到 1；位置仍是同一阅读偏移，拖动/中断/落定不变。
  */
 export class ChapterSeamDriver implements PageMotionDriver {
   private running: Animation[] = [];
@@ -39,6 +52,11 @@ export class ChapterSeamDriver implements PageMotionDriver {
   private generation = 0;
   private disposed = false;
   private readonly sign: 1 | -1;
+  private readonly cover: boolean;
+  private readonly origin: number;
+  private readonly target: number;
+  private readonly coverRestore: Array<{ screen: SeamElement; background: string; filter: string }> = [];
+  private targetBaseFilter = "";
 
   /** The running seam turn; while one runs, background sync waits. */
   private get animations(): Animation[] {
@@ -60,18 +78,25 @@ export class ChapterSeamDriver implements PageMotionDriver {
     progression: PageProgression,
     initialPosition: number,
     private readonly onFault: (error: unknown) => void,
+    motion: SeamMotion = "slide",
+    origin = 0,
   ) {
     this.sign = pageAxisSign(progression);
+    this.origin = origin;
+    this.target = screens.length === 2 ? 1 - origin : -1;
+    this.cover = motion === "cover" && this.target >= 0;
     this.held = initialPosition;
+    if (this.cover) this.prepareCover();
     this.apply(initialPosition);
   }
 
   read(): MotionSample {
     if (this.animations.length === 0) return { position: this.held };
-    const first = this.screens[0];
+    const index = this.cover ? this.origin : 0;
+    const first = this.screens[index];
     const value = first.ownerDocument.defaultView?.getComputedStyle(first).transform ?? "none";
     const x = value === "none" ? 0 : new DOMMatrixReadOnly(value).m41;
-    return { position: -x * this.sign };
+    return { position: (this.cover ? this.origin * this.width : 0) - x * this.sign };
   }
 
   interrupt(): InterruptResult {
@@ -109,8 +134,13 @@ export class ChapterSeamDriver implements PageMotionDriver {
       const progress = desktop ? k : settleProgress(plan, k / KEYFRAMES);
       const at = from + (position - from) * progress;
       const offset = desktop ? undefined : k / KEYFRAMES;
+      const coverProgress = this.coverProgress(at);
       this.screens.forEach((_, index) => {
-        frames[index].push({ transform: this.transform(index, at), ...(offset === undefined ? {} : { offset }) });
+        const frame: Keyframe = this.cover && index === this.target
+          ? { transform: this.transform(index, index * this.width), filter: this.coverFilter(coverProgress) }
+          : { transform: this.transform(index, at) };
+        if (offset !== undefined) frame.offset = offset;
+        frames[index].push(frame);
       });
     }
     const timing: KeyframeAnimationOptions = {
@@ -161,15 +191,69 @@ export class ChapterSeamDriver implements PageMotionDriver {
     ++this.generation;
     for (const animation of this.animations) animation.cancel();
     this.animations = [];
-    for (const screen of this.screens) screen.style.removeProperty("transform");
+    for (const screen of this.screens) {
+      screen.style.removeProperty("transform");
+      if (!this.cover) continue;
+      screen.style.removeProperty("z-index");
+      screen.style.removeProperty("box-shadow");
+    }
+    // 页面底色与滤镜可能来自阅读器的视觉滤镜；只撤掉本次叠加的部分。
+    for (const entry of this.coverRestore) {
+      if (entry.background) entry.screen.style.setProperty("background-color", entry.background);
+      else entry.screen.style.removeProperty("background-color");
+      if (entry.filter) entry.screen.style.setProperty("filter", entry.filter);
+      else entry.screen.style.removeProperty("filter");
+    }
+    this.coverRestore.length = 0;
   }
 
   private transform(index: number, position: number): string {
     return `translate3d(${this.sign * (index * this.width - position)}px, 0, 0)`;
   }
 
+  /** 覆盖模式：当前章滑出，相邻章停在原位；只写这两屏的呈现。 */
   private apply(position: number): void {
+    if (this.cover) {
+      const progress = this.coverProgress(position);
+      this.screens[this.origin].style.setProperty("transform", this.transform(this.origin, position));
+      this.screens[this.target].style.setProperty("transform", this.transform(this.target, this.target * this.width));
+      this.screens[this.target].style.setProperty("filter", this.coverFilter(progress));
+      return;
+    }
     this.screens.forEach((screen, index) => screen.style.setProperty("transform", this.transform(index, position)));
+  }
+
+  /** 覆盖模式只在开始时摆一次：层级、页面底色、前缘阴影与目标页初始亮度。 */
+  private prepareCover(): void {
+    const moving = this.screens[this.origin];
+    const revealed = this.screens[this.target];
+    const page = surfaceBackground(moving, ".reader") ?? "#fff";
+    const physicalNext = (this.target > this.origin ? 1 : -1) * this.sign === 1;
+    for (const screen of [moving, revealed]) {
+      this.coverRestore.push({
+        screen,
+        background: screen.style.getPropertyValue("background-color"),
+        filter: screen.style.getPropertyValue("filter"),
+      });
+    }
+    moving.style.setProperty("z-index", "2");
+    revealed.style.setProperty("z-index", "1");
+    if (isTransparent(moving.style.getPropertyValue("background-color"))) moving.style.setProperty("background-color", page);
+    if (isTransparent(revealed.style.getPropertyValue("background-color"))) revealed.style.setProperty("background-color", page);
+    moving.style.setProperty("box-shadow", physicalNext ? COVER_SHADOW : COVER_SHADOW_PREV);
+    this.targetBaseFilter = revealed.style.getPropertyValue("filter");
+    revealed.style.setProperty("filter", this.coverFilter(0));
+  }
+
+  private coverProgress(position: number): number {
+    if (!this.cover) return 0;
+    return Math.max(0, Math.min(1, Math.abs(position - this.origin * this.width) / this.width));
+  }
+
+  private coverFilter(progress: number): string {
+    const brightness = `brightness(${(0.94 + 0.06 * progress).toFixed(3)})`;
+    const base = this.targetBaseFilter.trim();
+    return base && base !== "none" ? `${base} ${brightness}` : brightness;
   }
 }
 
@@ -178,16 +262,16 @@ export interface ChapterSeamOptions {
   direction: 1 | -1;
   current: SeamElement;
   neighbor: SeamElement;
-  /**
-   * 多屏轨道（外层显示层）：按阅读顺序排列的各屏，含 current；neighbor 是 direction 一侧
-   * 的第一屏。不给时只有 current 与 neighbor 两屏。
-   */
+  /** 多屏轨道（外层显示层）：按阅读顺序排列的各屏，含 current；neighbor 是 direction 一侧
+   * 的第一屏。不给时只有 current 与 neighbor 两屏。覆盖模式只用当前章与相邻章两屏。 */
   track?: readonly SeamElement[];
   /** 一屏宽（单页或双页都是整个视口宽）。 */
   width: number;
   progression: PageProgression;
   /** 触屏用松手曲线，桌面用与章内相同的缓出。 */
   touch: boolean;
+  /** 章边联动的呈现；默认沿用滑动。 */
+  motion?: SeamMotion;
   /** 落定：landed=true 停在别的屏（见 settledScreen），false 回到当前章。 */
   onSettled(landed: boolean): void;
   onFault(error: unknown): void;
@@ -213,13 +297,18 @@ export class ChapterSeam {
   constructor(private readonly options: ChapterSeamOptions) {
     this.direction = options.direction;
     const width = options.width;
-    const screens = options.track ?? (options.direction === 1
-      ? [options.current, options.neighbor] : [options.neighbor, options.current]);
+    const motion = options.motion ?? "slide";
+    // 覆盖模式只有“当前章滑出、相邻章露出”两层；多屏轨道不参与，避免第三层从下方透出。
+    const screens = motion === "cover"
+      ? (options.direction === 1 ? [options.current, options.neighbor] : [options.neighbor, options.current])
+      : options.track ?? (options.direction === 1
+        ? [options.current, options.neighbor] : [options.neighbor, options.current]);
     this.currentPage = screens.indexOf(options.current);
     if (this.currentPage < 0 || !screens.includes(options.neighbor)) throw new Error("seam track lacks its own screens");
     this.screenCount = screens.length;
     const start = this.currentPage * width;
-    this.driver = new ChapterSeamDriver(screens, width, options.progression, start, (error) => this.fault(error));
+    this.driver = new ChapterSeamDriver(screens, width, options.progression, start, (error) => this.fault(error),
+      motion, this.currentPage);
     this.session = new PageMotionSession(
       this.driver,
       screens.map((_, index) => index * width),

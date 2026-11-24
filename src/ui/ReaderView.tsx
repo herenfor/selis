@@ -66,7 +66,7 @@ import {
 import { createSpreadGeometry } from "../render/pagedSpread";
 import type { ScrubToken } from "./readerProgressAxis";
 import { installPagedSwipe, PAGED_SWIPE_THRESHOLD_PX } from "../render/pagedSwipe";
-import { ChapterSeam, type ExternalSeam } from "./chapterSeam";
+import { ChapterSeam, type ExternalSeam, type SeamMotion } from "./chapterSeam";
 import { ChapterFillIndex, chapterFillEntries } from "../render/chapterFill";
 import { ChapterPreloadSchedule } from "./chapterPreloadSchedule";
 import { planFrontRun } from "./frontRunPlan";
@@ -1740,7 +1740,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   /** 当前章静止在 direction 一侧的章边，且相邻章的缓存槽可以直接拼上来。 */
   /** 当前章静止在 direction 一侧的章边、可以开始联动（来源另行判断）。 */
   const seamEdgeSlot = (direction: 1 | -1): PaginatorSlot | null => {
-    if (resolvedTurnAnimation() !== "slide" || inputPausedRef.current) return null;
+    const mode = resolvedTurnAnimation();
+    if ((mode !== "slide" && mode !== "cover") || inputPausedRef.current) return null;
     const current = activeSlotRef.current;
     const p = current?.paginator;
     if (!current || !p || !isActiveSlot(current) || current.spineIndex === null || !current.ready ||
@@ -1748,6 +1749,8 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     // 竖排步长与方向另算，第二阶段再接。
     if (p.flowsVertically || !p.pageMotionIdle) return null;
     if (direction === 1 ? p.currentPage < p.pageCount - 1 : p.currentPage > 0) return null;
+    // 覆盖与章内共用 View Transition 驱动；驱动不可用时章内已退化为淡入，章边不单独做覆盖。
+    if (mode === "cover" && !p.pageMotionAvailable) return null;
     return current;
   };
 
@@ -1899,10 +1902,14 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     const p = current?.paginator;
     const neighborPaginator = slot?.paginator;
     if (!slot || !current || !p || !neighborPaginator || slot.spineIndex === null) return null;
+    const motion: SeamMotion = resolvedTurnAnimation() === "cover" ? "cover" : "slide";
     // 拼接屏的另一章不跟普通联动走：先撤下（都在视口外），落定后按新位置重挂。
     detachJoin();
     // 后面的章从第一屏、前面的章从最后一屏拼上来；缓存章停在哪里都先归位（隐藏中，不可见）。
-    const track = seamTrackSlots(current, slot, direction);
+    // 覆盖只有当前章与相邻章两层，不把更远的缓存章排进轨道。
+    const track = motion === "cover"
+      ? { slots: direction === 1 ? [current, slot] : [slot, current], origin: direction === 1 ? 0 : 1 }
+      : seamTrackSlots(current, slot, direction);
     track.slots.forEach((member, index) => {
       if (member === current || !member.paginator) return;
       const edge = index > track.origin ? 0 : Math.max(0, member.paginator.pageCount - 1);
@@ -1917,6 +1924,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       width: current.iframe.clientWidth,
       progression: p.pageProgression,
       touch: prefersCoarsePointer(),
+      motion,
       onSettled: (landed) => { if (seam) settleSeam(seam, landed); },
       onFault: (error) => {
         console.warn("[reader] chapter seam fault", error);
@@ -3245,7 +3253,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     }
     if (joinMotionRef.current && !joinMotionRef.current.drag) endJoinMotion();
     // 静止在章边向外拖：相邻章已排好时两章一起跟手，否则走下方的跨章预览。
-    if (resolvedTurnAnimation() === "slide" && startSeam(direction) && followSeam()) {
+    if (isMotionTurn() && startSeam(direction) && followSeam()) {
       props.onBoundarySwipePreview?.(null);
       return;
     }
