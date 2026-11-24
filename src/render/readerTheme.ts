@@ -400,7 +400,6 @@ export function sameLayoutSettings(a: ReaderSettings, b: ReaderSettings): boolea
     a.wordSpacingPx === b.wordSpacingPx &&
     a.forceHorizontal === b.forceHorizontal &&
     (a.txtIndent === true) === (b.txtIndent === true) &&
-    (a.fullBleedImages !== false) === (b.fullBleedImages !== false) &&
     (a.pageDirection ?? "book") === (b.pageDirection ?? "book")
   );
 }

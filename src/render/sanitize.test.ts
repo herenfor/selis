@@ -1042,7 +1042,7 @@ background-position:center center;background-size:cover;background-color:#f9ebdf
     expect(out).not.toMatch(new RegExp(`#${VIEWER_ID}\\s*\\{[^}]*overflow:\\s*visible`, "s"));
   });
 
-  it("滚动模式纯图片页不在 overrides/scroll-mode 中强制尺寸（全屏样式单独控制）", async () => {
+  it("滚动模式纯图片页只保留类名，不再注入任何强制图片尺寸", async () => {
     const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>封面</title></head>
 <body><div class="cover"><img alt="cover" src="cover.jpg"/></div></body></html>`;
     const { html: out } = await sanitizeChapter(html, {
@@ -1051,11 +1051,8 @@ background-position:center center;background-size:cover;background-color:#f9ebdf
     });
     expect(out).not.toContain('class="fullpage-image"');
     expect(out).toContain('data-reader="scroll-mode"');
-    // 类名保留：paginator 依赖它跳过 margin 补偿；fullbleed-scroll 由独立的
-    // full-bleed 样式解除版心限宽，不混进这里的滚动默认值。
-    expect(out).toContain('class="pure-image-page fullbleed-scroll"');
-    expect(out).toContain('data-reader-full-bleed=""');
-    expect(out).toContain('data-reader="full-bleed-image"');
+    // 类名保留：paginator 依赖它跳过 margin 补偿
+    expect(out).toContain('class="pure-image-page"');
     expect(out).not.toContain('data-reader="pure-image-page"');
     // 三处强制尺寸都不得出现（纯图分支 + scroll-mode 全局 + 基础 imageCss）。
     // 按具体样式节点断言，避免误伤章末卡片的合法 width:100% / 脚注 max-height。

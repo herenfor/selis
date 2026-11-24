@@ -3019,8 +3019,6 @@ export default function App() {
                 onTxtIndentChange={book?.sourceFormat === "txt" ? settingsActions.setTxtIndent : undefined}
                 pageDirection={settings.pageDirection}
                 onPageDirectionChange={settingsActions.setPageDirection}
-                fullBleedImages={settings.fullBleedImages !== false}
-                onFullBleedImagesChange={settingsActions.setFullBleedImages}
                 customCss={settings.customCss}
                 onCustomCssChange={settingsActions.setCustomCss}
                 onResetDefaults={resetDefaults}

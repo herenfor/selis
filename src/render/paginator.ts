@@ -9,7 +9,6 @@ import { createFloatWidthSession, createTrailingFloatSession } from "./floatComp
 import { restoreInlineStyleProperty, snapshotInlineStyleProperty } from "./inlineStyleSnapshot";
 import type { InlineStyleValue } from "./inlineStyleSnapshot";
 import { sanitizeChapter, VIEWER_ID } from "./sanitize";
-import { hasFullPageSpineProperty } from "./fullPageImage";
 import { planCenteredTitleBody } from "./titlePageLayout";
 import { desktopSettlePlan, PageMotionSession, settlePlan } from "./pageMotion";
 import type { Direction as MotionDirection } from "./pageMotion";
@@ -463,9 +462,6 @@ export class ChapterPaginator {
   private onState: (s: ChapterState) => void;
   private onIssues?: (issues: string[], unresolvedResources: readonly string[]) => void;
   private fixedLayout: boolean;
-  /** OPF spine properties of the chapter currently loaded (Duokan full-page art). */
-  private spineProperties: readonly string[] = [];
-  private readonly spinePropertiesFor?: (path: string) => readonly string[] | undefined;
   private bookPageProgression: PageProgression;
   private flowProgression: PageProgression = "ltr";
   private directionSnapshot: { viewer: HTMLElement; key: string; restore: () => void } | null = null;
@@ -562,7 +558,6 @@ export class ChapterPaginator {
     onState,
     onIssues,
     fixedLayout = false,
-    spinePropertiesFor,
     pageProgression = "ltr",
     onNavigate,
     onBeforeInternalNavigate,
@@ -590,7 +585,6 @@ export class ChapterPaginator {
     this.onIssues = onIssues;
     this.mediaText = mediaText;
     this.fixedLayout = fixedLayout;
-    this.spinePropertiesFor = spinePropertiesFor;
     this.bookPageProgression = pageProgression;
     this.onNavigate = onNavigate;
     this.onBeforeInternalNavigate = onBeforeInternalNavigate;
@@ -1541,7 +1535,6 @@ export class ChapterPaginator {
         }
       : null;
     this._currentPath = path;
-    this.spineProperties = this.spinePropertiesFor?.(path) ?? [];
     this.pendingAnchor = opts.anchor;
     this.pendingStartAtEnd = opts.startAtEnd === true;
     // blob 文档可能在下一个绘制帧立刻出现；先隐藏整个 iframe，既保留
@@ -1623,8 +1616,6 @@ export class ChapterPaginator {
         makeUrl: (text, mediaType) =>
           ownedCssUrls.add(URL.createObjectURL(new Blob([text], { type: mediaType }))),
         fixedLayout: this.fixedLayout,
-        forceFullBleed:
-          this.settings.fullBleedImages !== false && hasFullPageSpineProperty(this.spineProperties),
         settings: this.settings,
         readScript: (p, signal) => /^(?:application|text)\/(?:x-)?(?:java|ecma)script$/i.test(server.resourceMediaType(p) ?? "")
           ? server.readTextFor(p, signal) : Promise.resolve(""),

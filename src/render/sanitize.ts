@@ -5,7 +5,7 @@ import { resolvePath, isFragmentOnly } from "../core/paths";
 import { hasAuthoredCssProperty, rewriteCssInlineWidths, rewriteCssUrls } from "./cssRewrite";
 import { isFullPageImage, linkedImagePage } from "./fullPageImage";
 import { findMultiImageGroups, isGalleryChapterBodyClass, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
-import { childElements, findElements, localNameOf } from "../core/xml";
+import { childElements, localNameOf } from "../core/xml";
 import { imageLayoutPolicy, scrollMediaDefaultsCss } from "./imageLayoutPolicy";
 import { buildThemeCss } from "./readerTheme";
 import { DEFAULT_SETTINGS, TEXT_MEASURE, type ReaderSettings } from "./settings";
@@ -30,8 +30,6 @@ export interface SanitizeOptions {
   stylesheetFor?: (path: string) => { url: string; unresolvedResources: readonly string[] } | undefined;
   /** 固定版式由原 viewport 分页，不参与 Issue #15 的多图组整页化。 */
   fixedLayout?: boolean;
-  /** OPF spine 声明整页插图（多看 duokan-page-fullscreen/-fitwindow）。 */
-  forceFullBleed?: boolean;
   settings: ReaderSettings;
   readScript?: (path: string, signal: AbortSignal) => Promise<string>;
   makeImageUrl?: (bytes: ArrayBuffer) => string;
@@ -666,14 +664,7 @@ export async function sanitizeChapter(
   // 普通 img 仍只在没有自带固定尺寸约束时整页填充（`width:100%` 属于流体
   // 声明，不算限宽）；多图页、限宽 title 图按书自身排版，否则会把一页拆成
   // 两页 / 把限宽图放大到全屏。
-  // 多看 spine 的 duokan-page-fullscreen/-fitwindow 是作者明确声明的整页
-  // 插图：即使图片带固定宽高也按全页处理，但不扩到多图/带文字页。
-  const forcedFullPage = opts.forceFullBleed === true &&
-    opts.settings.fullBleedImages !== false &&
-    bodyText.length === 0 &&
-    findElements(viewer, "img").length === 1 &&
-    findElements(viewer, "svg").length === 0;
-  const paginatedFillEligible = isFullPageImage(viewer, bodyText) || forcedFullPage;
+  const paginatedFillEligible = isFullPageImage(viewer, bodyText);
   const imagePageChildren = childElements(viewer);
   if (opts.settings.readingMode !== "scroll") {
     for (const page of imagePageChildren) {
@@ -712,58 +703,6 @@ export async function sanitizeChapter(
   });
   if (imagePolicy.viewerClass) {
     viewer.setAttribute("class", imagePolicy.viewerClass);
-  }
-  // 全屏插图（Issue #13）：单页/滚动下让封面和单图页贴到阅读区域边缘。
-  // 双页模式仍按书籍自己的双页配页处理，避免把成对插图拆成两张单页。
-  const fullBleedEligible = !opts.fixedLayout &&
-    opts.settings.fullBleedImages !== false &&
-    (opts.settings.readingMode === "scroll" || opts.settings.columnsPerView !== 2) &&
-    paginatedFillEligible;
-  if (fullBleedEligible) {
-    viewer.setAttribute("data-reader-full-bleed", "");
-    if (opts.settings.readingMode === "scroll") {
-      // xmldom 不实现 classList；与上面的 viewerClass 一样走属性。
-      const classes = viewer.getAttribute("class") ?? "";
-      viewer.setAttribute("class", classes ? `${classes} fullbleed-scroll` : "fullbleed-scroll");
-    }
-    const fullBleedStyle = doc.createElement("style");
-    fullBleedStyle.setAttribute("data-reader", "full-bleed-image");
-    // 分页沿用 fullpage-image 的整页 contain；滚动解除版心限宽并按原始比例
-    // 增高，长图仍由 viewer 纵向滚动。两者都先清掉页面/根容器边距。
-    fullBleedStyle.textContent = opts.settings.readingMode === "scroll"
-      ? `
-html, body { margin: 0 !important; padding: 0 !important; }
-#${VIEWER_ID}.fullbleed-scroll {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  max-width: none !important;
-}
-#${VIEWER_ID}.fullbleed-scroll :not(img):not(svg):not(image) {
-  width: 100% !important;
-  max-width: none !important;
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-#${VIEWER_ID}.fullbleed-scroll img,
-#${VIEWER_ID}.fullbleed-scroll svg {
-  width: 100% !important;
-  max-width: 100% !important;
-  height: auto !important;
-  max-height: none !important;
-  object-fit: contain;
-}`
-      : `
-html, body { margin: 0 !important; padding: 0 !important; }
-#${VIEWER_ID} {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  max-width: none !important;
-}`;
-    (doc.head ?? doc.documentElement).appendChild(fullBleedStyle);
   }
   if (imagePolicy.fillPage) {
     const imgStyle = doc.createElement("style");

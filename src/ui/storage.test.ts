@@ -67,7 +67,6 @@ describe("saved reader settings", () => {
       customCss: "p { text-indent: 2em; }", lineHeight: 1.7, fontWeight: 500,
       letterSpacingPx: 0.2, wordSpacingPx: 0.3,
       forceHorizontal: true, txtIndent: false, preloadNextChapter: true, seamlessChapterTurn: true, turnAnimation: "fade", pageDirection: "book",
-      fullBleedImages: true,
       readingMode: "scroll", pageMarginsPx: { left: 40, right: 40, top: 28, bottom: 28 },
       columnsPerView: 2, gapPx: 32, spreadGapMode: "manual",
     });

@@ -136,9 +136,6 @@ export interface AaPopoverProps {
   /** 翻页方向：跟随书籍 / 始终从左往右 */
   pageDirection?: PageDirectionSetting;
   onPageDirectionChange?: (value: PageDirectionSetting) => void;
-  /** 封面/单图页全屏铺满；默认开启。 */
-  fullBleedImages?: boolean;
-  onFullBleedImagesChange?: (enabled: boolean) => void;
   customCss?: string;
   onCustomCssChange?: (css: string) => void;
   onResetDefaults?: () => void;
@@ -321,8 +318,6 @@ export const AaPopover = React.memo(function AaPopover({
   onTxtIndentChange,
   pageDirection = "book",
   onPageDirectionChange,
-  fullBleedImages = true,
-  onFullBleedImagesChange,
   customCss = "",
   onCustomCssChange,
   onResetDefaults,
@@ -652,10 +647,6 @@ export const AaPopover = React.memo(function AaPopover({
         {onPageDirectionChange && (
           <SwitchRow label={t("aa.pageDirectionLtr")} hint={t("aa.pageDirectionLtr.hint")}
             checked={pageDirection === "ltr"} onChange={(checked) => onPageDirectionChange(checked ? "ltr" : "book")} />
-        )}
-        {onFullBleedImagesChange && (
-          <SwitchRow label={t("aa.fullBleedImages")} hint={t("aa.fullBleedImages.hint")}
-            checked={fullBleedImages} onChange={onFullBleedImagesChange} />
         )}
       </div>
 

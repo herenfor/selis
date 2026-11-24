@@ -1094,12 +1094,6 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
         if (isActiveSlot(slot)) onIssuesRef.current(issues, unresolvedResources);
       },
       fixedLayout: book.fixedLayout,
-      spinePropertiesFor: (path) => {
-        for (let index = 0; index < book.spine.length; index++) {
-          if (spineItemPath(book, index) === path) return book.spine[index].properties;
-        }
-        return undefined;
-      },
       onNavigate: (href) => {
         if (isInputSlot(slot)) onInternalLinkRef.current(href);
       },
