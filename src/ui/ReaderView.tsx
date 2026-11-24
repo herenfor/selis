@@ -3789,9 +3789,13 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const pair = requestedSpread && imageGeometry.columns === 2 ? planned : null;
   // A16：会显示为 A13 并排组的相邻章换的是另一种视图，章边联动不进入；分类未知时也不进入。
   const spreadsShown = requestedSpread && imageGeometry.columns === 2;
-  // 只在章边联动可能发生时（高性能预读 + 连续滑动 + 滑动动画）才多分类前后章，普通模式不增加读取。
-  const seamPossible = props.settings.preloadNextChapter === true && props.settings.seamlessChapterTurn === true &&
-    normalizeTurnAnimation(props.settings.turnAnimation) === "slide" && !prefersReducedMotion();
+  // 只在章边联动可能发生时（高性能预读 + 滑动/覆盖动画）才多分类前后章，普通模式不增加读取。
+  // 覆盖模式同样要提前分类：seamTargetEligible 会把未分类的邻章当成不可联动，既不预读也不接联动，
+  // 第一次到章边就只能退回普通换章（表现为滑动/落位动画），落定后再来回才恢复覆盖。
+  const seamTurnAnimation = normalizeTurnAnimation(props.settings.turnAnimation);
+  const seamTurnPossible = props.settings.preloadNextChapter === true && props.settings.seamlessChapterTurn === true &&
+    (seamTurnAnimation === "slide" || seamTurnAnimation === "cover") && !prefersReducedMotion();
+  const seamPossible = seamTurnPossible && seamTurnAnimation === "slide";
   const seamTargetEligible = useCallback((index: number) => !spreadsShown || imageSpreads.peek(index) === null,
     [spreadsShown, imageSpreads]);
   // A13-2：章边拼接只在普通正文之间；A13 并排组是独立边界（配对从它之后重新开始）。
@@ -3848,7 +3852,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const parkedIndex = plan?.layers.find((layer) => layer.kind === "paged")?.spineIndex ?? -1;
   const frontRunWaiting = frontRun?.waitingFor ?? -1;
   useEffect(() => {
-    if (!spreadsShown || !seamPossible) return;
+    if (!spreadsShown || !seamTurnPossible) return;
     // 提前分类相邻显示单元（只读 XHTML），让章边联动知道它们是否会并排；分好后重新规划。
     const controller = new AbortController();
     const first = pair?.left ?? props.spineIndex;
@@ -3864,7 +3868,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
       }
     }
     return () => controller.abort();
-  }, [imageSpreads, props.book, props.spineIndex, pair, parkedIndex, lookaheadIndex, spreadsShown, seamPossible, classifiedTick, frontRunWaiting]);
+  }, [imageSpreads, props.book, props.spineIndex, pair, parkedIndex, lookaheadIndex, spreadsShown, seamTurnPossible, classifiedTick, frontRunWaiting]);
   const tapGeometry = useMemo(() => createReaderTapGeometry(width, props.tapRegions), [width, props.tapRegions]);
   const bookProgression = effectivePageProgression(props.book.pageProgression, props.settings, props.book.fixedLayout);
   // 点击翻页区按本章实际方向映射（竖排书元数据没写方向时与元数据不同）。

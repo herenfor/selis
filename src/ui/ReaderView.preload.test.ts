@@ -109,6 +109,7 @@ class MockPaginator {
   closeForNavigation() {}
   clearSearchHighlight() {}
   resetWheelAccumulator() {}
+  reflow = vi.fn();
   dispose() { this.disposed = true; this.complete?.(); this.flushReadyWaiters(false); }
 }
 vi.mock("../render/paginator", () => ({
@@ -132,6 +133,7 @@ describe("ReaderView preload settings lifecycle", () => {
       book, server: {
         revokeAll: vi.fn(),
         textFor: vi.fn(() => "<html></html>"),
+        readTextFor: vi.fn(async () => `<html><body><p>${"字".repeat(700)}</p></body></html>`),
       } as unknown as ComponentProps<typeof ReaderView>["server"],
       settings: { ...DEFAULT_SETTINGS, preloadNextChapter: true }, userFonts: [], notes: [],
       spineIndex: 0, anchorNonce: 0, startAtEnd: { nonce: 0, atEnd: false },
@@ -274,6 +276,51 @@ describe("ReaderView preload settings lifecycle", () => {
     expect(next.callbacks.iframe.style.filter).not.toContain("brightness");
     expect(next.callbacks.iframe.style.zIndex).toBeFalsy();
     expect(active.callbacks.iframe.style.visibility).toBe("hidden");
+  });
+
+  it("double-page cover classifies the next chapter so the first boundary turn uses the cover seam", async () => {
+    props = { ...props, settings: { ...props.settings, columnsPerView: 2, turnAnimation: "cover", seamlessChapterTurn: true } };
+    const resizeCallbacks: Array<() => void> = [];
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { resizeCallbacks.push(callback); }
+      observe() {} unobserve() {} disconnect() {}
+    });
+    const handle = createRef<ReaderHandle>();
+    const renderReader = () => dom.render(createElement(ReaderView, { ...props, ref: handle }));
+    await renderReader();
+    const host = dom.container.querySelector(".reader-presentation-host") as HTMLElement;
+    dom.metrics(host, { clientWidth: 1080, clientHeight: 671 });
+    await act(async () => { for (const callback of resizeCallbacks) callback(); });
+    // The adjacent-chapter classification reads XHTML asynchronously before the
+    // chapter edge is reachable; without it the neighbour counts as an A13 spread.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const active = instances[0];
+    await finish(active);
+    const next = instances.find(p => p.path === "1.xhtml")!;
+    await finish(next);
+    const animations: Array<() => void> = [];
+    for (const p of instances) {
+      Object.assign(p, {
+        pageMotionIdle: true, pageProgression: "ltr", flowsVertically: false, pageMotionAvailable: true,
+        motionTurn: () => "chapter",
+      });
+      Object.defineProperties(p.callbacks.iframe, {
+        clientWidth: { configurable: true, value: 800 },
+        clientHeight: { configurable: true, value: 600 },
+        animate: { configurable: true, value: () => {
+          let resolve!: () => void;
+          const finished = new Promise<void>(done => { resolve = done; });
+          animations.push(resolve);
+          return { finished, cancel: vi.fn() };
+        } },
+      });
+    }
+    active.currentPage = active.pageCount - 1;
+    await act(async () => { handle.current!.nextPage(); });
+    // Cover seam: the current chapter lifts above the prepared neighbour.
+    expect(animations.length).toBeGreaterThanOrEqual(2);
+    expect(active.callbacks.iframe.style.zIndex).toBe("2");
+    expect(next.callbacks.iframe.style.zIndex).toBe("1");
   });
 
   it("prepares both ordinary edges: a newly mounted previous layer loads at chapter end", async () => {
