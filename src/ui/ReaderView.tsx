@@ -2931,6 +2931,14 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   }, [settings.preloadNextChapter, book.fixedLayout, settings.readingMode, activeFrame, props.presentationStandby,
     props.standbyPrepareThrough]);
 
+  // 相邻章分类是异步的：恢复在章末时预读计时器（16ms）往往先跑完，邻章被当成
+  // 未分类而跳过。分类完成后用新的 seamTargetEligible 身份重排一次，第一次章边
+  // 翻页才来得及用上覆盖联动。
+  useEffect(() => {
+    if (preloadAllowedRef.current) queueAdjacentPreloads(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the classification identity should re-run it.
+  }, [props.seamTargetEligible]);
+
   // Keep the stable reader container (not a promoted chapter iframe) as the
   // resize target. The paginator restores its last stable reading anchor.
   useEffect(() => {
@@ -3796,8 +3804,10 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const seamTurnPossible = props.settings.preloadNextChapter === true && props.settings.seamlessChapterTurn === true &&
     (seamTurnAnimation === "slide" || seamTurnAnimation === "cover") && !prefersReducedMotion();
   const seamPossible = seamTurnPossible && seamTurnAnimation === "slide";
+  const [classifiedTick, setClassifiedTick] = useState(0);
+  // 分类结果变化时换一个身份：内层据此重排预读，见下方 seamTargetEligible 的 effect。
   const seamTargetEligible = useCallback((index: number) => !spreadsShown || imageSpreads.peek(index) === null,
-    [spreadsShown, imageSpreads]);
+    [spreadsShown, imageSpreads, classifiedTick]);
   // A13-2：章边拼接只在普通正文之间；A13 并排组是独立边界（配对从它之后重新开始）。
   const chapterFillKind = useCallback((index: number): "ordinary" | "isolated" | undefined => {
     if (!spreadsShown) return "ordinary";
@@ -3810,7 +3820,6 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   }, [spreadsShown, imageSpreads]);
   // A16 第二阶段：连续滑动 + 双页时，外层同时保留当前显示与相邻显示层（见 presentationStack）。
   const stackOn = seamPossible && spreadsShown && props.settings.readingMode !== "scroll" && !props.book.fixedLayout;
-  const [classifiedTick, setClassifiedTick] = useState(0);
   // Keep whichever ordinary layer just landed as the resident reader. A
   // reverse seam must not discard that prepared document and reload another.
   const pagedLayerKey = useRef<PagedLayerKey>(PAGED_LAYER);
