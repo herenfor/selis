@@ -1,3 +1,4 @@
+import { parseInertHtml } from "../core/inertHtml";
 import { resolveArchiveHref } from "../core/archiveReferences";
 import { resolvePath } from "../core/paths";
 import type { Book } from "../core/types";
@@ -66,13 +67,6 @@ export interface ChapterCountJobOptions {
   onCounts?(counts: Array<[number, number]>): void;
   onError?(index: number): void;
   onIssue?(message: string): void;
-}
-
-function defaultParse(text: string): Document {
-  if (typeof DOMParser === "undefined") throw new Error("DOMParser unavailable");
-  const doc = new DOMParser().parseFromString(text, "text/html");
-  if (!doc) throw new Error("DOMParser returned no document");
-  return doc;
 }
 
 function countStructuralContent(doc: Document): { text: number; media: number } {
@@ -147,7 +141,7 @@ export function createChapterCountJob(options: ChapterCountJobOptions): { cancel
           } else {
             // Same self-closing normalization as the rendered chapter: a raw
             // `<script/>` would otherwise swallow the body and count as 0.
-            value = countStructuralChapter((options.parse ?? defaultParse)(normalizeChapterMarkup(text)));
+            value = countStructuralChapter((options.parse ?? parseInertHtml)(normalizeChapterMarkup(text)));
           }
         }
       } catch (error) {

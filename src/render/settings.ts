@@ -1,3 +1,4 @@
+import type { BookContentPermissions } from "./bookContent/permissions";
 /** 阅读器设置（渲染相关）。 */
 
 import type { PageMarginsPx, ReadingMode, SpreadGapMode } from "./pageLayout";
@@ -81,6 +82,7 @@ export interface ReaderSettings {
    * false 保留页边距，减少全屏页面在屏幕边缘的误触。
    */
   fullBleedImages?: boolean;
+  bookContentPermissions?: BookContentPermissions;
 }
 
 export type PageDirectionSetting = "book" | "ltr";

@@ -1,3 +1,4 @@
+mod book_remote_images;
 mod document_formats;
 mod android_app_task;
 mod android_app_update;
@@ -44,6 +45,8 @@ mod cloud_sync;
 macro_rules! configure_invoke_handler {
     ($builder:expr) => {
         $builder.invoke_handler(tauri::generate_handler![
+            book_remote_images::book_remote_image,
+            book_remote_images::cancel_book_remote_image,
             reader_tools::reader_tools_status,
             reader_tools::reader_tools_set_enabled,
             reader_tools::reader_tools_retry_provider,
@@ -263,6 +266,8 @@ macro_rules! configure_invoke_handler {
 macro_rules! configure_invoke_handler {
     ($builder:expr) => {
         $builder.invoke_handler(tauri::generate_handler![
+            book_remote_images::book_remote_image,
+            book_remote_images::cancel_book_remote_image,
             app_update::app_update_install_kind,
             cloud_sync::commands::cloud_sync_get_status,
             cloud_sync::commands::cloud_sync_test_connection,
@@ -511,6 +516,7 @@ pub fn run() {
 
     let builder = builder
         .manage(FontWriteState::default())
+        .manage(book_remote_images::RemoteImageRequests::default())
         .manage(LinkedLibraryWriteState::default())
         .manage(linked_library::LibraryLocationState::default())
         .manage(linked_library::pdf_range::PdfRanges::default())

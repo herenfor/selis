@@ -67,6 +67,31 @@ export interface FootnoteInfo {
   target: HTMLElement;
 }
 
+const FOOTNOTE_MARKUP = new Set(["a", "b", "br", "div", "em", "i", "img", "li", "ol", "p", "rp", "rt", "ruby", "small", "span", "strong", "sub", "sup", "u", "ul"]);
+const FOOTNOTE_ATTRIBUTES = new Set(["alt", "title", "lang", "dir", "width", "height"]);
+
+/** The popover renders in the host document, outside the chapter CSP. */
+function footnoteMarkup(target: HTMLElement): string {
+  const output = target.ownerDocument.createElement("div");
+  function copy(source: Node, parent: Node): void {
+    if (source.nodeType === 3) parent.appendChild(output.ownerDocument.createTextNode(source.nodeValue ?? ""));
+    if (source.nodeType !== 1) return;
+    const element = source as Element;
+    const tag = element.localName.toLowerCase();
+    if (!FOOTNOTE_MARKUP.has(tag)) return;
+    const next = output.ownerDocument.createElement(tag === "a" ? "span" : tag);
+    for (const attr of Array.from(element.attributes)) {
+      if (FOOTNOTE_ATTRIBUTES.has(attr.name) || (tag === "img" && attr.name === "src" && /^(?:blob:|data:image\/)/i.test(attr.value))) {
+        next.setAttribute(attr.name, attr.value);
+      }
+    }
+    for (const child of Array.from(source.childNodes)) copy(child, next);
+    parent.appendChild(next);
+  }
+  for (const child of Array.from(target.childNodes)) copy(child, output);
+  return output.innerHTML;
+}
+
 /**
  * 提取脚注文本。优先取目标 <aside> 的文本（script.js 同款），
  * 缺失时回退到标记内图片的 zy-footnote 属性（部分掌阅书只写属性）。
@@ -82,7 +107,7 @@ export function resolveFootnote(doc: Document, a: HTMLAnchorElement): FootnoteIn
   const asideText = cleanText(target);
   if (asideText) {
     // 图片注释/带排版结构的注释：弹层需要渲染富内容而不是纯文本
-    const html = target.querySelector("img") ? target.innerHTML : undefined;
+    const html = target.querySelector("img") ? footnoteMarkup(target) : undefined;
     return { text: asideText, html, target };
   }
   const attrText = cleanText(a.querySelector("img") ?? a);

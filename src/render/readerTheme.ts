@@ -376,6 +376,7 @@ export function samePageMargins(
  */
 export function sameLayoutSettings(a: ReaderSettings, b: ReaderSettings): boolean {
   return (
+    a.bookContentPermissions === b.bookContentPermissions &&
     a.fontSizePx === b.fontSizePx &&
     a.fontFamily === b.fontFamily &&
     a.customFontName === b.customFontName &&

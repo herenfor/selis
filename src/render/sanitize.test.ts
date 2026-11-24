@@ -109,6 +109,20 @@ describe("sanitizeChapter", () => {
     expect(out).not.toContain("javascript:");
   });
 
+  it("blocks authored loaders by default and retains local responsive images", async () => {
+    const { html } = await sanitizeChapter(`<html xmlns="http://www.w3.org/1999/xhtml"><head>
+      <meta http-equiv="refresh" content="0;url=https://example.invalid/"/>
+      <link rel="dns-prefetch" href="//example.invalid"/>
+      <style>@import "https://example.invalid/style.css";</style></head><body>
+      <picture><source srcset="https://example.invalid/remote.png 1x, local.png 2x"/><img src="https://example.invalid/remote.png"/></picture>
+      <a href="https://example.invalid/article" ping="https://example.invalid/log">link</a></body></html>`, opts());
+    expect(html).toContain("img-src blob: data:; font-src");
+    expect(html.indexOf("Content-Security-Policy")).toBeLessThan(html.indexOf("<style"));
+    expect(html).toContain('srcset="blob:test/OEBPS/Text/local.png 2x"');
+    expect(html).toContain('href="https://example.invalid/article"');
+    expect(html).not.toMatch(/refresh|dns-prefetch|remote\.png|style\.css| ping=/);
+  });
+
   it("严格 XML 中仅保留无提交能力的 text/checkbox/radio input 及其状态属性", async () => {
     const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body>
 <label for="reader-name">姓名</label><input id="reader-name" type="text" disabled="disabled" oninput="evil()"/>

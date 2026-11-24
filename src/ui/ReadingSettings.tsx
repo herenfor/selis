@@ -4,6 +4,7 @@ import { useExitPresence } from "./menuMotion";
 import { useUiText } from "./localization/UiLanguageProvider";
 import { TAP_REGION_LABEL_KEYS } from "./localization/catalogs/tapRegions";
 import { ReaderTapRegionsPanel, tapRegionsReset, type ReaderTapRegionsLabels } from "./ReaderTapRegionsPanel";
+import type { BookContentPermissionControls } from "./useBookContentPermissions";
 import type { ReaderTapPreferences } from "./readerTapRegions";
 import type { ReaderTapRegionSettings } from "./readerTapRouting";
 import "./readerTapRegions.css";
@@ -147,6 +148,7 @@ export function ReadingSettingsContent(props: ReadingSettingsProps) {
 }
 
 export interface ReaderReadingSettingsProps extends ReadingSettingsProps {
+  bookContentPermissions?: Omit<BookContentPermissionControls, "renderPermissions">;
   open: boolean;
   /** "dialog" on desktop, "page" (full screen) on touch — same split as the shelf settings. */
   presentation: "dialog" | "page";

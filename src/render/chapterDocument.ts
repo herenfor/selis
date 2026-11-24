@@ -2,7 +2,7 @@ import { hasParserError, parseXmlText } from "../core/parseXml";
 
 export const STRIPPED_CHAPTER_TAGS = new Set([
   "script", "object", "embed", "iframe", "frame", "frameset", "base",
-  "form", "button", "select", "textarea",
+  "form", "button", "select", "textarea", "template",
 ]);
 
 /**

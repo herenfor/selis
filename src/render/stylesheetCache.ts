@@ -60,7 +60,7 @@ export class StylesheetCache {
       if (!url && !unresolvedResources.includes(dependency)) unresolvedResources.push(dependency);
       return url;
     }, {
-      archiveReferences: options.archiveReferences, maxEm,
+      archiveReferences: options.archiveReferences, maxEm, blockExternalImports: true,
       getText: (dependency) => {
         const value = getText(dependency);
         texts.set(dependency, value);

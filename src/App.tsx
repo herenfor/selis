@@ -19,6 +19,7 @@ import { clearDocumentSelection } from "./render/selectionGuard";
 import { effectivePageProgression, normalizeTurnAnimation } from "./render/settings";
 import type { ChapterState, MediaReadingAnchor } from "./render/paginator";
 import { useReaderSettings, useReaderSettingsPersistence } from "./ui/useReaderSettings";
+import { useBookContentPermissions } from "./ui/useBookContentPermissions";
 import { sanitizeTextProjectionPreferences } from "./render/textProjection/preferences";
 import type { ImageViewRequest } from "./render/imageActivation";
 import { ImageViewer } from "./ui/ImageViewer";
@@ -766,13 +767,10 @@ export default function App() {
   });
   const sidebarNavigationMemoryRef = useRef(sidebarNavigationMemory);
   sidebarNavigationMemoryRef.current = sidebarNavigationMemory;
-  // The narrow-window lock is derived for the reader only: the saved preference
-  // and the Aa selection stay untouched.
+  const bookContentPermissions = useBookContentPermissions(view === "reader" && currentShelfId && activeShelfSpace().kind === "library" && isTauriEnv() ? book : null, spineIndex, runtime.platform);
   const readerChapterSettings = useMemo(
-    () => singlePageLock && chapterSettings.columnsPerView !== 1
-      ? { ...chapterSettings, columnsPerView: 1 as const }
-      : chapterSettings,
-    [chapterSettings, singlePageLock],
+    () => ({ ...chapterSettings, columnsPerView: singlePageLock ? 1 as const : chapterSettings.columnsPerView, bookContentPermissions: bookContentPermissions.renderPermissions }),
+    [chapterSettings, singlePageLock, bookContentPermissions.renderPermissions],
   );
   const canResizeSidebar = isDockedSidebarVisible && canDockSidebar &&
     responsive.layout === "wide" && !phoneChrome;
@@ -3446,7 +3444,7 @@ export default function App() {
       )}
       {view === "reader" && (
         <PanelPaintWarmup active={warming("reading") && !readingSettingsOpen}>
-          <ReaderReadingSettings
+          <ReaderReadingSettings bookContentPermissions={bookContentPermissions}
             textEncoding={book?.sourceFormat === "txt" ? book.textEncoding || "auto" : undefined}
             onTextEncodingChange={encoding => {
               if (!currentShelfId) return;

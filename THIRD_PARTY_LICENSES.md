@@ -14,6 +14,10 @@ Each component remains subject to its respective license.
 |---|---:|---|---|
 | React | 18.3.1 | MIT | https://github.com/facebook/react |
 | React DOM | 18.3.1 | MIT | https://github.com/facebook/react |
+| parse5 (inert chapter parsing) | 8.1.1 | MIT | https://github.com/inikulin/parse5 |
+| entities (parse5) | 7.0.1 | BSD-2-Clause | https://github.com/fb55/entities |
+| QuickJS and quickjs-emscripten (book-script worker) | 0.32.0 JS package | MIT | https://github.com/justjake/quickjs-emscripten |
+| imagesize (remote book image headers) | 0.15.0 | MIT | https://crates.io/crates/imagesize |
 | fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate |
 | pixi.js (AI experimental avatar only) | 6.5.10 | MIT | https://github.com/pixijs/pixijs |
 | pixi-live2d-display (AI experimental avatar only) | 0.4.0 | MIT; bundled Cubism framework has its own license | https://github.com/guansss/pixi-live2d-display |

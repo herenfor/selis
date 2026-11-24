@@ -579,6 +579,7 @@ export class ChapterPaginator {
     shouldIgnorePlainTap,
   }: ChapterPaginatorOptions) {
     this.iframe = iframe;
+    iframe.setAttribute?.("sandbox", "allow-same-origin");
     this.server = server;
     this.settings = settings;
     this.strictXml = strictXml;
@@ -1587,6 +1588,9 @@ export class ChapterPaginator {
         forceFullBleed:
           this.settings.fullBleedImages !== false && hasFullPageSpineProperty(this.spineProperties),
         settings: this.settings,
+        readScript: (p, signal) => /^(?:application|text)\/(?:x-)?(?:java|ecma)script$/i.test(server.resourceMediaType(p) ?? "")
+          ? server.readTextFor(p, signal) : Promise.resolve(""),
+        makeImageUrl: bytes => ownedCssUrls.add(URL.createObjectURL(new Blob([bytes]))),
       });
     } catch (e) {
       this.releaseResourceHolder(holderId);

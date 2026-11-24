@@ -1,7 +1,7 @@
 import { resolveArchiveHref, type ArchiveReferences } from "../core/archiveReferences";
 import { getSerializer } from "../core/parseXml";
 import { parseChapterDocument, STRIPPED_CHAPTER_TAGS } from "./chapterDocument";
-import { resolvePath, isExternalUrl, isFragmentOnly } from "../core/paths";
+import { resolvePath, isFragmentOnly } from "../core/paths";
 import { hasAuthoredCssProperty, rewriteCssInlineWidths, rewriteCssUrls } from "./cssRewrite";
 import { isFullPageImage, linkedImagePage } from "./fullPageImage";
 import { findMultiImageGroups, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
@@ -9,6 +9,9 @@ import { childElements, findElements, localNameOf } from "../core/xml";
 import { imageLayoutPolicy, scrollMediaDefaultsCss } from "./imageLayoutPolicy";
 import { buildThemeCss } from "./readerTheme";
 import { DEFAULT_SETTINGS, TEXT_MEASURE, type ReaderSettings } from "./settings";
+import { BOOK_CHAPTER_CSP, externalResource, permissionsForChapter, remoteImageAddress } from "./bookContent/permissions";
+import { imageCandidates, prepareBookImages } from "./bookContent/remoteImages";
+import { applyBookScripts, readBookScripts } from "./bookContent/bookScripts";
 import { deferPlaybackSource, isPlaybackSource, MEDIA_PLAYER_CSS } from "./mediaMarkup";
 
 export interface SanitizeOptions {
@@ -30,6 +33,8 @@ export interface SanitizeOptions {
   /** OPF spine 声明整页插图（多看 duokan-page-fullscreen/-fitwindow）。 */
   forceFullBleed?: boolean;
   settings: ReaderSettings;
+  readScript?: (path: string, signal: AbortSignal) => Promise<string>;
+  makeImageUrl?: (bytes: ArrayBuffer) => string;
 }
 
 export interface SanitizeResult {
@@ -361,11 +366,23 @@ export async function sanitizeChapter(
   if (!root) {
     throw new Error("章节内容为空，无法渲染");
   }
+  const permission = permissionsForChapter(opts.settings.bookContentPermissions, opts.basePath);
+  const [images, scripts] = await Promise.all([
+    permission?.networkEnabled ? prepareBookImages(doc, opts, permission.signal) : undefined,
+    permission?.javascriptEnabled ? readBookScripts(doc, opts, permission.signal) : [],
+  ]);
+  const remoteImageFor = images?.size ? (href: string) => {
+    const address = remoteImageAddress(href);
+    return address ? images.get(address) : undefined;
+  } : undefined;
+  const resolveImage = (value: string) => /^data:image\//i.test(value) ? value
+    : externalResource(value) ? remoteImageFor?.(value)
+    : value ? urlFor(resolveArchiveHref(opts.archiveReferences, opts.basePath, value).path) : undefined;
   let hasMedia = false;
 
   // 1) 移除危险标签
   for (const el of Array.from(doc.getElementsByTagName("*"))) {
-    const tag = el.tagName.toLowerCase();
+    const tag = el.localName.toLowerCase();
     if (tag === "input") {
       const inputType = (el.getAttribute("type") ?? "").trim().toLowerCase();
       if (!SAFE_INPUT_TYPES.has(inputType)) {
@@ -376,13 +393,9 @@ export async function sanitizeChapter(
       el.parentNode?.removeChild(el);
       continue;
     }
-    // meta refresh 防自动跳转
-    if (tag === "meta") {
-      const he = (el.getAttribute("http-equiv") ?? "").toLowerCase();
-      if (he === "refresh") {
-        el.parentNode?.removeChild(el);
-        continue;
-      }
+    if (tag === "meta" && Array.from(el.attributes).some(attr => attr.name.toLowerCase() === "http-equiv")) {
+      el.parentNode?.removeChild(el);
+      continue;
     }
 
     // 2) 清理属性
@@ -402,8 +415,17 @@ export async function sanitizeChapter(
         el.removeAttribute(attr.name);
         continue;
       }
-      if (name.startsWith("on")) {
+      if (name.startsWith("on") || name === "ping" || name === "srcdoc" || name === "attributionsrc" || (tag === "area" && name === "href")) {
         el.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === "srcset") {
+        const candidates = (tag === "img" || tag === "source") ? imageCandidates(attr.value).flatMap(candidate => {
+          const url = resolveImage(candidate.href);
+          return url ? [`${url} ${candidate.descriptor}`.trim()] : [];
+        }) : [];
+        if (candidates.length) el.setAttribute(attr.name, candidates.join(", "));
+        else el.removeAttribute(attr.name);
         continue;
       }
       if (name === "src" || name === "poster" || name === "data" || name === "xlink:href" || (name === "href" && (tag === "image" || tag === "use"))) {
@@ -418,7 +440,11 @@ export async function sanitizeChapter(
           el.removeAttribute(attr.name);
           continue;
         }
-        if (isFragmentOnly(value) || isExternalUrl(value) || value.startsWith("//")) {
+        if (isFragmentOnly(value) || /^data:(?:image\/|font\/)/i.test(value)) continue;
+        if (externalResource(value)) {
+          const image = (tag === "img" || tag === "image" || name === "poster") ? remoteImageFor?.(value) : undefined;
+          if (image) el.setAttribute(attr.name, image);
+          else el.removeAttribute(attr.name);
           continue;
         }
         const ref = opts.archiveReferences
@@ -461,7 +487,7 @@ export async function sanitizeChapter(
     // 3) 内联 style 中的 url()
     const style = el.getAttribute("style");
     if (style) {
-      el.setAttribute("style", rewriteCssUrls(style, opts.basePath, urlFor, { archiveReferences: opts.archiveReferences }));
+      el.setAttribute("style", rewriteCssUrls(style, opts.basePath, urlFor, { archiveReferences: opts.archiveReferences, remoteImageFor, blockExternalImports: true }));
     }
   }
 
@@ -471,13 +497,14 @@ export async function sanitizeChapter(
   const authorCssTexts: string[] = [];
   for (const link of Array.from(doc.getElementsByTagName("link"))) {
     const rel = (link.getAttribute("rel") ?? "").toLowerCase();
-    if (rel.includes("stylesheet")) {
+    if (/(?:^|\s)stylesheet(?:\s|$)/.test(rel)) {
+      link.setAttribute("rel", "stylesheet");
       const href = link.getAttribute("href");
-      if (href && !isExternalUrl(href)) {
+      if (href && !externalResource(href)) {
         const cssPath = opts.archiveReferences ? resolveArchiveHref(opts.archiveReferences, opts.basePath, href).path : resolvePath(opts.basePath, href);
         const cssText = opts.getText?.(cssPath);
         if (cssText !== undefined) authorCssTexts.push(cssText);
-        const shared = opts.stylesheetFor?.(cssPath);
+        const shared = remoteImageFor ? undefined : opts.stylesheetFor?.(cssPath);
         if (shared) {
           link.setAttribute("href", shared.url);
           for (const path of shared.unresolvedResources) missingResources.add(path);
@@ -487,7 +514,7 @@ export async function sanitizeChapter(
         if (cssText !== undefined && opts.makeUrl) {
           const rewritten = rewriteCssUrls(cssText, cssPath, urlFor, {
             getText: opts.getText,
-            archiveReferences: opts.archiveReferences,
+            archiveReferences: opts.archiveReferences, remoteImageFor, blockExternalImports: true,
           });
           link.setAttribute("href", opts.makeUrl(rewritten, "text/css"));
         } else {
@@ -498,7 +525,7 @@ export async function sanitizeChapter(
             link.parentNode?.removeChild(link);
           }
         }
-      }
+      } else link.parentNode?.removeChild(link);
     } else {
       link.parentNode?.removeChild(link);
     }
@@ -509,7 +536,7 @@ export async function sanitizeChapter(
     const text = stEl.textContent;
     if (text) {
       authorCssTexts.push(text);
-      const rewritten = rewriteCssUrls(text, opts.basePath, urlFor, { archiveReferences: opts.archiveReferences });
+      const rewritten = rewriteCssUrls(text, opts.basePath, urlFor, { archiveReferences: opts.archiveReferences, remoteImageFor, blockExternalImports: true });
       while (stEl.firstChild) stEl.removeChild(stEl.firstChild);
       stEl.appendChild(doc.createTextNode(rewritten));
     }
@@ -762,15 +789,14 @@ html, body { margin: 0 !important; padding: 0 !important; }
     headForImg.appendChild(imgStyle);
   }
 
-  // 6) 注入 CSP 与阅读器覆盖样式（放在所有书样式之后，保证覆盖优先级）
+  if (permission?.javascriptEnabled) await applyBookScripts(doc, scripts, permission);
+
+  // 6) 安全策略先于资源，阅读器样式最后覆盖。
   const head = doc.head ?? doc.documentElement;
   const csp = doc.createElement("meta");
   csp.setAttribute("http-equiv", "Content-Security-Policy");
-  csp.setAttribute(
-    "content",
-    "default-src 'none'; style-src 'unsafe-inline' blob:; img-src blob: data: https: http:; font-src blob: data:; media-src blob:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
-  );
-  head.appendChild(csp);
+  csp.setAttribute("content", BOOK_CHAPTER_CSP);
+  head.insertBefore(csp, head.firstChild);
   if (hasMedia) {
     const mediaStyle = doc.createElement("style");
     mediaStyle.setAttribute("data-reader", "media-playback");

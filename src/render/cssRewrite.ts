@@ -1,6 +1,7 @@
 import { resolveArchiveHref, type ArchiveReferences } from "../core/archiveReferences";
 import { isExternalUrl } from "../core/paths";
 import { TEXT_MEASURE } from "./settings";
+import { externalResource } from "./bookContent/permissions";
 
 function resolveOrKeep(
   raw: string,
@@ -28,6 +29,9 @@ export interface CssRewriteOptions {
   getText?: (path: string) => string | undefined;
   /** 已内联的样式表路径（防循环 @import） */
   seen?: Set<string>;
+  /** Chapter-owned replacements for external image URLs. */
+  remoteImageFor?: (href: string) => string | undefined;
+  blockExternalImports?: boolean;
 }
 
 interface CssCommentContext {
@@ -261,6 +265,7 @@ function rewriteCssUrlsInternal(
   let out = protectCssComments(css, context);
   // 先处理 @import（裸字符串与 url() 两种写法，保留媒体后缀）
   out = mapCssImports(out, (match, raw, suffix) => {
+    if (options.blockExternalImports && externalResource(raw)) return "";
     if (!raw || /^(data:|blob:|https?:|mailto:|#|\/\/)/i.test(raw)) return match;
     const resolved = resolveArchiveHref(options.archiveReferences, basePath, raw).path;
     // 能读到内容就递归内联：width:%→em、url()→blob 都以被导入文件为基准，
@@ -285,7 +290,10 @@ function rewriteCssUrlsInternal(
     return `@import url("${url}")${suffix ?? ""};`;
   });
   // 再处理其余 url(...)
-  out = mapCssUrls(out, (match, href) => resolveOrKeep(href, basePath, resolveUrl, match, options.archiveReferences));
+  out = mapCssUrls(out, (match, href) => {
+    const image = options.remoteImageFor?.(href.trim());
+    return image ? `url("${image}")` : resolveOrKeep(href, basePath, resolveUrl, match, options.archiveReferences);
+  });
   // width:X% → 改写为 min(X%, X%×40rem)（与 sanitize 的 DOM 级重写配套）。
   // 书的 % 是按“页面≈版心”的阅读器写的，我们的页面=窗口全宽；
   // min() 保留两个候选让浏览器按真实包含块取值：

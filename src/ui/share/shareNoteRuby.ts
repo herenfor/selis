@@ -1,3 +1,4 @@
+import { parseInertHtml } from "../../core/inertHtml";
 import type { Book } from "../../core/types";
 import { projectRubyQuote } from "../../render/rubyQuote";
 import { buildVisibleTextIndex, normalizeAnchorText } from "../../render/textAnchor";
@@ -13,7 +14,7 @@ export async function addNoteRuby(book: Book, note: ReaderNote, draft: ShareDraf
     const markup = new TextDecoder(encoding).decode(bytes);
     if (!/<ruby[\s>]/iu.test(markup)) return draft;
     // Detached content only. The rendered index also omits hidden fallback brackets.
-    const doc = new DOMParser().parseFromString(markup, "text/html");
+    const doc = parseInertHtml(markup);
     doc.querySelectorAll("ruby rp").forEach((element) => element.setAttribute("hidden", ""));
     const index = buildVisibleTextIndex(doc, doc.body);
     const start = note.startTextOffset, end = note.endTextOffset;

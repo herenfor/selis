@@ -1,3 +1,5 @@
+import { parseInertHtml } from "./inertHtml";
+
 /**
  * 跨环境 XML 解析：浏览器用 DOMParser，Node（测试）用 @xmldom/xmldom。
  * 解析失败的检测由调用方通过 hasParserError 完成。
@@ -28,6 +30,9 @@ export async function parseXmlText(
   xml: string,
   mime: "application/xml" | "text/html" = "application/xml"
 ): Promise<Document> {
+  if (mime === "text/html" && typeof document !== "undefined" && typeof document.implementation?.createHTMLDocument === "function") {
+    return parseInertHtml(xml);
+  }
   const Parser = await getParser();
   if (typeof DOMParser !== "undefined") {
     // 浏览器：DOMParser 失败时原生注入 <parsererror>

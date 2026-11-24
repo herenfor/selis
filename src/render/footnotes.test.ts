@@ -73,11 +73,14 @@ describe("script.js（LK 参考脚本）脚注模式识别", () => {
   it("图片注释提取为富文本 HTML（供弹层渲染）", () => {
     const d = doc(`
 <note><p>正文<sup><a class="duokan-footnote" href="#n1"><img alt="note"/></a></sup></p>
-<aside id="n1"><p>注：内容</p><div><img alt="note3" src="note3.webp"/></div></aside></note>`);
+<aside id="n1"><p>注：内容</p><div><img alt="note3" src="blob:test/note3.webp" srcset="https://example.invalid/img" style="background:url(https://example.invalid/img)"/><link rel="preload" href="https://example.invalid/img"/></div></aside></note>`);
     const a = anchor(d, "a");
     const info = resolveFootnote(d, a);
     expect(info?.text).toBe("注：内容");
-    expect(info?.html).toContain('<img alt="note3"');
+    const image = doc(info?.html ?? "").querySelector("img");
+    expect(image?.getAttribute("alt")).toBe("note3");
+    expect(image?.getAttribute("src")).toBe("blob:test/note3.webp");
+    expect(info?.html).not.toMatch(/example\.invalid|<style/);
   });
 
   it("纯文本注释不生成 HTML", () => {
