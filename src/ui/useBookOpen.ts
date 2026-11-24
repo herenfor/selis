@@ -256,7 +256,7 @@ export function useBookOpen({
       for (const [index, value] of cached) {
         counts = applyChapterCount(counts, generation, index, value, "estimated").collection;
       }
-      if (b.sourceFormat === "comic-zip") {
+      if (b.comicPages) {
         counts = applyChapterCount(counts, generation, 0, (b.comicPages?.length ?? 0) * 1000, "estimated").collection;
       }
       activeSessionRef.current.structuralCounts = counts;
@@ -549,19 +549,21 @@ export function useBookOpen({
           ? searchTarget.spineIndex
           : (chosenProjection?.spineIndex ?? entry.spineIndex ?? 0);
         let b: Book;
-        if (openArchive) {
+        if (sourceFormat(entry.fileName) === "pdf") {
+          if (!store.openPdf) throw new Error("PDF 请在普通原生书架中打开");
+          openStage = "readSource";
+          const { loadPdfBook } = await import("../core/pdf/book");
+          b = await loadPdfBook(await store.openPdf(id), entry.fileName);
+          unownedBook = b;
+          openStage = "begin";
+          candidateLease = await store.prepareProgressSession?.(id, progressSelection) ?? null;
+          if (!candidateLease) await store.beginProgressSession?.(id, progressSelection);
+        } else if (openArchive) {
           openStage = "openArchive";
           const sourceEncoding = sourceFormat(entry.fileName) === "txt"
             ? textEncodingOverride || textEncodingFromPath((chosenProgressVersion ? projectProgressVersion(chosenProgressVersion).chapterPath : (entry as { chapterPath?: string }).chapterPath)) || shelfSpaceStorage.getItem(`epub-reader:txt-encoding:${id}`)
             : undefined;
-          const archive = await openArchive(id, sourceEncoding || undefined).catch((error) => {
-            if (describeBookOpenFailure(error).sourceUnavailable) {
-              setShelfEntries((prev) =>
-                prev.map((item) => (item.id === id ? { ...item, available: false } : item))
-              );
-            }
-            throw error;
-          });
+          const archive = await openArchive(id, sourceEncoding || undefined);
           unownedArchive = archive;
           openStage = "begin";
           // B3: prepare, but do not publish, the selected progress candidate.
@@ -576,17 +578,7 @@ export function useBookOpen({
           openStage = "parse";
         } else {
           openStage = "readSource";
-          let buf: Uint8Array;
-          try {
-            buf = await store.readBook(id);
-          } catch (error) {
-            if (describeBookOpenFailure(error).sourceUnavailable) {
-              setShelfEntries((prev) =>
-                prev.map((item) => (item.id === id ? { ...item, available: false } : item))
-              );
-            }
-            throw error;
-          }
+          const buf = await store.readBook(id);
           // Legacy browser shelf IDs may be UUIDs; index identity always comes from EPUB bytes.
           if (IS_AI_EDITION && !isTauriEnv() && !/^[a-f0-9]{64}$/.test(entry.contentHash ?? "")) {
             entry = await store.setContentHash(id, await sha256Hex(buf));
@@ -795,6 +787,9 @@ export function useBookOpen({
         setShelfBusy(false);
       } catch (e) {
         const failure = describeBookOpenFailure(e);
+        if (failure.sourceUnavailable && (openStage === "readSource" || openStage === "openArchive")) {
+          setShelfEntries(prev => prev.map(item => item.id === id ? { ...item, available: false } : item));
+        }
         recordLifecycleDiagnostic("open_failed", {
           stage: openStage,
           result: "failed",

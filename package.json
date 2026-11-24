@@ -37,6 +37,7 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "fflate": "^0.8.2",
+    "pdfjs-dist": "6.5.438",
     "pixi-live2d-display": "0.4.0",
     "pixi.js": "6.5.10",
     "qrcode": "1.5.4",

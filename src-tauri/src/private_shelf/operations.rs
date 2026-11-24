@@ -289,6 +289,9 @@ fn import_book(
             }
         }
     };
+    if crate::document_formats::pdf(&file_name) {
+        return Err(ShelfError::new("unsupported-format", "PDF 请导入普通书架阅读"));
+    }
     let meta =
         linked_library::epub_meta::inspect_book(&path, &file_name).map_err(ShelfError::storage)?;
     if linked_library::snapshot(&path).map_err(ShelfError::storage)? != before {

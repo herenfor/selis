@@ -16,6 +16,7 @@ const STABLE_READ_ATTEMPTS: usize = 3;
 /// its own sidecars. `.zip` is our comic alias, never a Readest book.
 pub(super) fn book_file_name(name: &str) -> bool {
     !matches!(name, "config.json" | "cover.png" | "nav.json")
+        && !crate::document_formats::pdf(name)
         && !crate::document_formats::extension(name).eq_ignore_ascii_case("zip")
         && crate::document_formats::supported(name)
 }

@@ -163,6 +163,7 @@ export interface ShelfStore {
    * Android 链接式路径可选：按需访问原生 ZIP 目录与条目，避免整本 EPUB
    * 经 Java/WebView IPC 堆内分配；未实现的后端继续用 readBook。
    */
+  openPdf?(id: string): Promise<import("../../core/pdf/range").PdfSource>;
   openArchive?(id: string, textEncoding?: string): Promise<ArchiveClient>;
   /** Every format, EPUB included, is read through openArchive (no whole-file readBook). */
   readonly archiveOnly?: boolean;

@@ -101,7 +101,7 @@ fn book_arguments(args: impl IntoIterator<Item = OsString>, cwd: &Path) -> Vec<P
             if !path.extension().is_some_and(|ext| {
                 matches!(
                     ext.to_string_lossy().to_ascii_lowercase().as_str(),
-                    "epub" | "mobi" | "azw3"
+                    "epub" | "mobi" | "azw3" | "pdf"
                 )
             }) {
                 return None;

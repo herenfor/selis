@@ -10,7 +10,7 @@ import {
 export interface BookSourceExportResult {
   status: "written" | "cancelled" | "no-books";
   jobId: string;
-  outputFormat: "epub" | "txt" | "cbz" | "zip" | "fb2" | "mobi" | "azw3";
+  outputFormat: "epub" | "txt" | "cbz" | "zip" | "fb2" | "mobi" | "azw3" | "pdf";
   requestedBooks: number;
   writtenBooks: number;
   bookBytes: number;

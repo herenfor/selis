@@ -16,3 +16,19 @@
 .comic-reader.is-scroll .comic-track.is-zoomed{overflow-x:auto;touch-action:pan-x pan-y}
 
 .comic-page :is(img,canvas)[hidden]{display:none}
+
+.pdf-page-jump {
+  position: absolute;
+  inset-inline-end: .6rem;
+  bottom: .5rem;
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .15rem .45rem;
+  border-radius: .4rem;
+  background: var(--bg);
+  color: inherit;
+  font-size: .8rem;
+  font-variant-numeric: tabular-nums;
+}
+.pdf-page-jump input { width: 5ch; color: inherit; font: inherit; text-align: center; }

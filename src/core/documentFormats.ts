@@ -6,17 +6,17 @@ import { detectArchiveReferences } from "./archiveReferences";
 import { guessMediaType } from "./mime";
 import type { Book, BookOptions } from "./types";
 import { MOBI_FORMAT_ENABLED } from "../config/mobiFormat";
-export type SourceFormat = "epub" | "txt" | "comic-zip" | "fb2" | "mobi" | "azw3";
+export type SourceFormat = "epub" | "txt" | "comic-zip" | "fb2" | "mobi" | "azw3" | "pdf";
 // Persisted source-scalar boundaries: keep in step with the native adapter.
 export const TEXT_PART_CHARS = 32768;
 export function sourceFormat(name: string): SourceFormat {
-    return /\.txt$/i.test(name) ? "txt" : /\.(?:cbz|zip)$/i.test(name) ? "comic-zip" : /\.fb2$/i.test(name) ? "fb2" : /\.mobi$/i.test(name) ? "mobi" : /\.azw3$/i.test(name) ? "azw3" : "epub";
+    return /\.pdf$/i.test(name) ? "pdf" : /\.txt$/i.test(name) ? "txt" : /\.(?:cbz|zip)$/i.test(name) ? "comic-zip" : /\.fb2$/i.test(name) ? "fb2" : /\.mobi$/i.test(name) ? "mobi" : /\.azw3$/i.test(name) ? "azw3" : "epub";
 }
 /** A `.mobi` name, whether or not this build opens MOBI. */
 export function mobiBookName(name: string): boolean { return /\.mobi$/i.test(name); }
 /** Formats this build imports. `.mobi` only when the ER-0150 switch is on; AZW3 always. */
 export function supportedBookName(name: string, mobi: boolean = MOBI_FORMAT_ENABLED): boolean {
-    return /\.(?:epub|txt|cbz|zip|fb2|azw3)$/i.test(name) || (mobi && mobiBookName(name));
+    return /\.(?:pdf|epub|txt|cbz|zip|fb2|azw3)$/i.test(name) || (mobi && mobiBookName(name));
 }
 export const TEXT_ENCODINGS = ["auto", "utf-8", "utf-16le", "utf-16be", "gb18030", "gbk", "big5", "shift_jis", "euc-jp", "iso-2022-jp", "euc-kr", ...Array.from({ length: 9 }, (_, i) => `windows-${1250 + i}`), "windows-874", "ibm866", "koi8-r", "koi8-u", "macintosh", ...[2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 15, 16].map(n => `iso-8859-${n}`)] as const;
 export function textEncodingFromPath(path: string | null | undefined): string | undefined {
@@ -306,6 +306,7 @@ export async function loadTextBytes(bytes: Uint8Array, title: string, requested?
 }
 export async function loadSourceBook(bytes: Uint8Array, fileName: string, options: BookOptions = {}, encoding?: string): Promise<Book> {
     const format = sourceFormat(fileName);
+    if (format === "pdf") throw new Error("PDF 请通过原生书架打开");
     if (format === "fb2")
         throw new Error("FB2 请通过原生书库导入并打开；浏览器暂不支持读取 FB2 原文件");
     if (format === "mobi" || format === "azw3")
@@ -318,6 +319,7 @@ export async function loadSourceBook(bytes: Uint8Array, fileName: string, option
 }
 export async function loadSourceArchive(archive: ArchiveClient, fileName: string, options: BookOptions = {}): Promise<Book> {
     const format = sourceFormat(fileName);
+    if (format === "pdf") { archive.close(); throw new Error("PDF 需要按范围读取原书"); }
     if (format === "fb2") {
         const book = await loadBookFromArchive(archive, options);
         book.sourceFormat = "fb2";

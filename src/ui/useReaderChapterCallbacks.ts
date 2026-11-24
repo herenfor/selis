@@ -237,7 +237,7 @@ export function useReaderChapterCallbacks({
         if (axis) {
           const seg = axis.segments.find((item) => item.spineIndex === spineIndexRef.current);
           if (seg) {
-            const intra = currentBook.sourceFormat === "comic-zip" ? s.totalScrollProgress ?? 0 : s.pageCount > 1 ? s.currentPage / (s.pageCount - 1) : 1;
+            const intra = currentBook.comicPages ? s.totalScrollProgress ?? 0 : s.pageCount > 1 ? s.currentPage / (s.pageCount - 1) : 1;
             const ratio = atEnd ? 1 : axis.ratioAt({ key: seg.key, fraction: intra });
             if (ratio !== null) {
               dispatchScrub({
@@ -305,7 +305,7 @@ export function useReaderChapterCallbacks({
       if (axis) {
         const seg = axis.segments.find((item) => item.spineIndex === currentIndex);
         if (seg) {
-          const intra = currentBook.sourceFormat === "comic-zip" ? state.totalScrollProgress ?? 0 : state.pageCount > 1 ? state.currentPage / (state.pageCount - 1) : 1;
+          const intra = currentBook.comicPages ? state.totalScrollProgress ?? 0 : state.pageCount > 1 ? state.currentPage / (state.pageCount - 1) : 1;
           const ratio = atEnd ? 1 : axis.ratioAt({ key: seg.key, fraction: intra });
           if (ratio !== null) {
             dispatchScrub(matchingSeek

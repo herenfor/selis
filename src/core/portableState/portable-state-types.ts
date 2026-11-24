@@ -60,7 +60,7 @@ export type PortablePreferences = { readonly theme?: Theme; readonly fontSizePx?
   readonly lineHeight?: number; readonly fontWeight?: number;
   readonly letterSpacingPx?: number; readonly wordSpacingPx?: number };
 export type PortableStateV3 = {
-  readonly schemaVersion: 3 | 4 | 5 | 6 | 7 | 8;
+  readonly schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9;
   readonly books: Readonly<Record<string, PortableBook>>;
   readonly organization: LibraryOrganization;
   readonly preferences?: PortablePreferences;
@@ -74,7 +74,8 @@ export type PortableStateV3 = {
 export function portableSchemaVersion(
   books: Readonly<Record<string, PortableBook>>,
   organization?: LibraryOrganization,
-): 3 | 4 | 5 | 6 | 7 | 8 {
+): 3 | 4 | 5 | 6 | 7 | 8 | 9 {
+  if (Object.values(books).some(book => /\.pdf$/i.test(book.metadata.value.fileName))) return 9;
   if (organization?.schemaVersion === 2) return 8;
   if (Object.values(books).some(book => /\.(?:mobi|azw3)$/i.test(book.metadata.value.fileName))) return 7;
   if (Object.values(books).some(book => Object.values(book.notes).some(annotation =>

@@ -54,6 +54,7 @@ pub(crate) mod document_source;
 #[cfg(target_os = "android")]
 use document_source::hash_original_document;
 mod source;
+pub(crate) mod pdf_range;
 mod archive_stamp;
 #[cfg(target_os = "android")]
 pub(crate) use archive_stamp::remember_imported_archive;

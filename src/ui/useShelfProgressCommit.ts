@@ -89,7 +89,7 @@ export function useShelfProgressCommit({
     const currentSummary = summarizeLinearCounts(chapterCountsRef.current, spineIndex);
     const exactChars = currentChapterCharsRead({
       textOffset: a?.textOffset,
-      chapterFraction: book?.sourceFormat === "comic-zip" ? state.totalScrollProgress : undefined,
+      chapterFraction: book?.comicPages ? state.totalScrollProgress : undefined,
       page: state.currentPage,
       pageCount: state.pageCount,
       chapterChars: currentSummary.current ?? 0,

@@ -815,6 +815,7 @@ pub(super) fn source_schema_version(books: &std::collections::BTreeMap<String, P
     // tombstones have no versions and do not carry highlight capabilities.
     // A newer capability wins: a library mixing Kindle sources and highlight
     // data needs 7, and only 7 aware readers may interpret the Kindle locations.
+    if books.values().any(|book| crate::document_formats::pdf(&book.metadata.value.file_name)) { return 9; }
     if books.values().any(|book| crate::document_formats::kindle(&book.metadata.value.file_name)) {
         return 7;
     }
@@ -836,14 +837,14 @@ pub(super) fn portable_schema_version(
     organization: &LibraryOrganization,
 ) -> u64 {
     if organization.schema_version == crate::library_organization::ORGANIZATION_SCHEMA_VERSION {
-        8
+        8.max(source_schema_version(books))
     } else {
         source_schema_version(books)
     }
 }
 
 pub fn validate_portable_state(state: &PortableStateV3) -> PortableResult<()> {
-    if !matches!(state.schema_version, 3 | 4 | 5 | 6 | 7 | 8) {
+    if !matches!(state.schema_version, 3 | 4 | 5 | 6 | 7 | 8 | 9) {
         return Err(PortableError::invalid_data(
             "invalid-data：不支持的 portable schemaVersion",
         ));
@@ -1405,7 +1406,7 @@ mod note_highlight_contract_tests {
             "books":{},
             "organization":{"schemaVersion":2,"folders":{},"books":{}}
         });
-        future_state["schemaVersion"] = json!(9);
+        future_state["schemaVersion"] = json!(10);
         assert!(parse_portable_state_value(future_state).is_err());
     }
 

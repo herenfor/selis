@@ -16,14 +16,14 @@ describe("book file types", () => {
       expect(types.some((type) => type.extension === "azw3")).toBe(true);
       expect(supportedBookName("a.MOBI", mobi)).toBe(mobi);
     }
-    for (const name of ["a.MOBI", "a.azw3"]) expect(nativeOnlyBookName(name)).toBe(true);
+    for (const name of ["a.MOBI", "a.azw3", "a.pdf"]) expect(nativeOnlyBookName(name)).toBe(true);
     expect(nativeOnlyBookName("a.epub")).toBe(false);
   });
 
   it("defaults follow VITE_MOBI_FORMAT; unset means off", () => {
     const on = /^(?:1|on|true)$/i.test(String(import.meta.env.VITE_MOBI_FORMAT ?? ""));
     expect(MOBI_FORMAT_ENABLED).toBe(on);
-    expect(bookPickerExtensions()).toEqual(on ? ["epub", "fb2", "txt", "cbz", "zip", "mobi", "azw3"] : ["epub", "fb2", "txt", "cbz", "zip", "azw3"]);
+    expect(bookPickerExtensions()).toEqual(on ? ["pdf", "epub", "fb2", "txt", "cbz", "zip", "mobi", "azw3"] : ["pdf", "epub", "fb2", "txt", "cbz", "zip", "azw3"]);
     expect(IMPORT_BOOK_FILE_TYPES).toEqual(importableBookFileTypes(BOOK_FILE_TYPES, on));
     expect(supportedBookName("a.mobi")).toBe(on);
   });

@@ -1973,7 +1973,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentPath, navigationTocAnchor, readingTextOffset, chapterState.status === "ready" ? chapterState.currentPage : -1],
   );
-  const positionTocAnchor = book?.sourceFormat !== "comic-zip" && currentPath && readingTextOffset !== null && currentFileTocAnchors.length > 0
+  const positionTocAnchor = !book?.comicPages && currentPath && readingTextOffset !== null && currentFileTocAnchors.length > 0
     ? (() => {
         const offsets = readerRef.current?.fragmentTextOffsets?.(currentPath, currentFileTocAnchors);
         return offsets ? pickTocAnchor(currentFileTocAnchors, offsets, readingTextOffset,
@@ -1983,7 +1983,7 @@ export default function App() {
   const activeHref = currentPath
     ? positionTocAnchor !== undefined
       ? `${currentFileTocPath}#${positionTocAnchor}`
-      : archiveHref(book?.archiveReferences, currentPath, book?.sourceFormat === "comic-zip" && chapterState.status === "ready" ? `page-${(chapterState.leafRange?.first ?? 1) - 1}` : anchor ?? "")
+      : archiveHref(book?.archiveReferences, currentPath, book?.comicPages && chapterState.status === "ready" ? `page-${(chapterState.leafRange?.first ?? 1) - 1}` : anchor ?? "")
     : undefined;
   activeHrefRef.current = activeHref;
   // 阅读进度：以"标准页 = 1000 字"为尺度，按锚点所在字数位置推算
@@ -1999,7 +1999,7 @@ export default function App() {
     const a = currentReadingAnchor;
     return currentChapterCharsRead({
       textOffset: a?.textOffset,
-      chapterFraction: book?.sourceFormat === "comic-zip" && chapterState.status === "ready" ? chapterState.totalScrollProgress : undefined,
+      chapterFraction: book?.comicPages && chapterState.status === "ready" ? chapterState.totalScrollProgress : undefined,
       page: chapterState.currentPage,
       pageCount: chapterState.pageCount,
       chapterChars: countSummary.current ?? 0,
@@ -2514,8 +2514,8 @@ export default function App() {
 
   /** 每个 spine 项在目录里的名字：插图页、拆开的章节文件沿用上一个目录项；封面等目录之前的为空串。 */
   const tocSpineLabels = useMemo(() => book ? tocLabelsBySpine(book) : [], [book]);
-  const currentChapterLabel = ready ? book?.sourceFormat === "comic-zip" && chapterState.status === "ready"
-    ? book.toc[(chapterState.leafRange?.first ?? 1) - 1]?.label ?? ""
+  const currentChapterLabel = ready ? book?.comicPages && chapterState.status === "ready"
+    ? (book.pdfPage ? `${chapterState.leafRange?.first ?? 1} / ${book.comicPages.length}` : book.toc[(chapterState.leafRange?.first ?? 1) - 1]?.label ?? "")
     : (positionTocAnchor !== undefined && tocIndex ? activeTocEntry(tocIndex, activeHref)?.node.label : undefined) || (tocSpineLabels[spineIndex] ?? "") : "";
   // The shelf's "continue" card shows this name for the saved position.
   useEffect(() => {

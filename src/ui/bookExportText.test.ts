@@ -47,8 +47,8 @@ describe("book export text", () => {
   it("keeps an FB2 original's suffix and MIME type", () => {
     expect(bookExportFileName("小说.FB2", "x")).toBe("小说.fb2");
     expect(bookExportMimeType("小说.fb2")).toBe("application/x-fictionbook+xml");
-    expect(["a.epub", "a.txt", "a.cbz", "a.zip"].map(bookExportMimeType))
-      .toEqual(["application/epub+zip", "text/plain", "application/zip", "application/zip"]);
+    expect(["a.epub", "a.txt", "a.cbz", "a.zip", "a.pdf"].map(bookExportMimeType))
+      .toEqual(["application/epub+zip", "text/plain", "application/zip", "application/zip", "application/pdf"]);
     expect(bookExportTargetLabel({ kind: "uri", uri: "content://x/document/primary%3ADownload%2F%E5%B0%8F%E8%AF%B4.fb2" })).toBe("小说.fb2");
   });
 });

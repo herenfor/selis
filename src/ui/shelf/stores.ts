@@ -522,6 +522,11 @@ export class TauriShelfStore implements ShelfStore {
     return new Uint8Array(buf);
   }
 
+  async openPdf(id: string) {
+    const { openPdfSource } = await import("../../core/pdf/range");
+    return openPdfSource(id);
+  }
+
   async openArchive(id: string, textEncoding?: string): Promise<ArchiveClient> {
     return createNativeLinkedArchiveClient(id, invoke, undefined, textEncoding, true);
   }

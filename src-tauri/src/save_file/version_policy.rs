@@ -30,8 +30,8 @@ pub(crate) fn select_archive_reader(
     schema: u64,
 ) -> Result<ArchiveReader, VersionError> {
     match (container, schema) {
-        (1, 3 | 4 | 5 | 6 | 7 | 8) => Ok(ArchiveReader::Container1State3),
-        (container, schema) if container > 1 || schema > 8 => Err(VersionError::NeedsNewerApp),
+        (1, 3 | 4 | 5 | 6 | 7 | 8 | 9) => Ok(ArchiveReader::Container1State3),
+        (container, schema) if container > 1 || schema > 9 => Err(VersionError::NeedsNewerApp),
         _ => Err(VersionError::UnsupportedFormat),
     }
 }
@@ -75,7 +75,7 @@ mod tests {
             Ok(ArchiveReader::Container1State3)
         );
         assert_eq!(
-            select_archive_reader(1, 9),
+            select_archive_reader(1, 10),
             Err(VersionError::NeedsNewerApp)
         );
         assert_eq!(

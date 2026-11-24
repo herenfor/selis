@@ -395,7 +395,7 @@ fn source_formats_cloud_preserves_state_four_and_reads_old_three() {
     state.schema_version = 8;
     assert_eq!(parsed.state,state);
     let mut future:serde_json::Value=serde_json::from_slice(&bytes).unwrap();
-    future["state"]["schemaVersion"]=json!(9);
+    future["state"]["schemaVersion"]=json!(10);
     assert_eq!(parse_device(&serde_json::to_vec(&future).unwrap(),SPACE,A).unwrap_err(),SyncError::UnsupportedSyncVersion);
 }
 

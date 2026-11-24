@@ -462,6 +462,12 @@ export class PortableShelfStore implements ShelfStore {
     return this.legacy.readBook(id);
   }
 
+  async openPdf(id: string) {
+    if (!this.legacy.openPdf) throw new Error("PDF 请在普通原生书架中打开");
+    await this.observeBookAnnotations(id);
+    return this.legacy.openPdf(id);
+  }
+
   async openArchive(id: string, textEncoding?: string): Promise<ArchiveClient> {
     await this.observeBookAnnotations(id);
     const create = this.legacy.openArchive?.bind(this.legacy);

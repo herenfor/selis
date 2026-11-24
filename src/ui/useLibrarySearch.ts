@@ -93,7 +93,7 @@ export function useLibrarySearchBooks({ runtime, librarySearchRuntime, shelfEntr
     if (!activeShelfSpace().policy.libraryServices) return;
     const nativeArchive = isTauriEnv() && Boolean(getShelfStore().openArchive);
     librarySearchRuntime.setBooks(shelfEntries
-      .filter((entry): entry is ShelfEntry & { contentHash: string } => Boolean(entry.contentHash) && !/\.(?:cbz|zip)$/i.test(entry.fileName))
+      .filter((entry): entry is ShelfEntry & { contentHash: string } => Boolean(entry.contentHash) && !/\.(?:cbz|zip|pdf)$/i.test(entry.fileName))
       .map((entry) => ({
         id: entry.id,
         fileName: entry.fileName,

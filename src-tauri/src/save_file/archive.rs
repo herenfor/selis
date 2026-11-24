@@ -521,12 +521,12 @@ fn read_entry_bytes(
 }
 
 fn source_entry_path(state: &PortableStateV3, hash: &str) -> String {
-    let extension=state.books.get(hash).map(|b| crate::document_formats::extension(&b.metadata.value.file_name).to_ascii_lowercase()).filter(|e| matches!(e.as_str(),"epub"|"txt"|"cbz"|"zip"|"fb2"|"mobi"|"azw3")).unwrap_or_else(||"epub".into());
+    let extension=state.books.get(hash).map(|b| crate::document_formats::extension(&b.metadata.value.file_name).to_ascii_lowercase()).filter(|e| matches!(e.as_str(),"epub"|"txt"|"cbz"|"zip"|"fb2"|"mobi"|"azw3"|"pdf")).unwrap_or_else(||"epub".into());
     format!("books/{hash}.{extension}")
 }
 fn book_hash_from_path(name: &str) -> Option<String> {
     let (hash, extension)=name.strip_prefix("books/")?.rsplit_once('.')?;
-    (valid_hash(hash) && matches!(extension,"epub"|"txt"|"cbz"|"zip"|"fb2"|"mobi"|"azw3")).then(||hash.to_owned())
+    (valid_hash(hash) && matches!(extension,"epub"|"txt"|"cbz"|"zip"|"fb2"|"mobi"|"azw3"|"pdf")).then(||hash.to_owned())
 }
 fn allowed_entry_path(name: &str) -> bool {
     name=="manifest.json" || name=="state.json" || book_hash_from_path(name).is_some()

@@ -91,7 +91,7 @@ class SidebarDockViewport extends Component<Props, object, PageSize | null> {
 export const SourceReaderView = forwardRef<ReaderHandle,
   ReaderViewProps & Pick<Props, "dockedSide" | "resizing" | "onDockSettled">
 >(function SourceReaderView({ dockedSide, resizing = false, onDockSettled, ...props }, ref) {
-  const Reader = props.book.sourceFormat === "comic-zip" ? ComicReaderView : ReaderView;
+  const Reader = props.book.comicPages ? ComicReaderView : ReaderView;
   return <SidebarDockViewport dockedSide={dockedSide} resizing={resizing} onDockSettled={onDockSettled}>
     <Reader ref={ref} {...props} />
   </SidebarDockViewport>;

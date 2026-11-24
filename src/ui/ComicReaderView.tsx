@@ -17,9 +17,10 @@ import { uiText } from "./localization/UiLanguageProvider";
 import { getAppBuildSession } from "../config/appBuildSession";
 import { watchAndroidForeground } from "../platform/androidAppTask";
 import { ComicPageRaster } from "./ComicPageRaster";
+import { PdfPageJump } from "./pdf/PdfPageJump";
 import "./comicReader.css";
 
-const CHAPTER = "__reader__/comic.xhtml";
+
 const PAGED_WINDOW_SCREENS = 24;
 const PAGED_EDGE_SCREENS = 5;
 const STRIP_WINDOW_PAGES = 96;
@@ -53,6 +54,7 @@ type StripAnchor = { page: number; down: number; across: number };
 export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function ComicReaderView(props, ref) {
   const latest = useRef(props);
   latest.current = props;
+  const chapter = props.book.sourceFormat === "pdf" ? "__reader__/pdf.xhtml" : "__reader__/comic.xhtml";
   const pages = props.book.comicPages!;
   const root = useRef<HTMLDivElement>(null), track = useRef<HTMLDivElement>(null);
   const initial = comicPageForAnchor(pages, props.initialAnchor?.mediaAnchor?.signature, props.initialAnchor?.mediaAnchor?.index ?? 0);
@@ -155,7 +157,7 @@ export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(functio
     if (current.status !== "ready" || current.transient) return;
     if (!readyOnce.current) {
       readyOnce.current = true;
-      latest.current.onRestoreResult?.({ chapterPath: CHAPTER, located: initial !== null, ticket: latest.current.restoreTicket ?? null });
+      latest.current.onRestoreResult?.({ chapterPath: chapter, located: initial !== null, ticket: latest.current.restoreTicket ?? null });
       latest.current.onDisplayReady(latest.current.restoreTicket ?? null);
     }
     if (navigationPending.current) {
@@ -165,13 +167,13 @@ export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(functio
     if (seek.current) {
       const token = seek.current;
       seek.current = null;
-      latest.current.onContentFractionSettled?.(token, { key: CHAPTER, spineIndex: 0, fraction: fraction(), atEnd: atEnd() });
+      latest.current.onContentFractionSettled?.(token, { key: chapter, spineIndex: 0, fraction: fraction(), atEnd: atEnd() });
     }
     if (userMoved.current) {
       userMoved.current = false;
       latest.current.onUserReadingPositionChange?.(latest.current.restoreTicket ?? null);
     }
-    if (changed) latest.current.onUserProgressSample?.({ key: CHAPTER, spineIndex: 0, fraction: fraction(), atEnd: atEnd() });
+    if (changed) latest.current.onUserProgressSample?.({ key: chapter, spineIndex: 0, fraction: fraction(), atEnd: atEnd() });
   };
   const align = (p: Position, behavior: ScrollBehavior = "auto") => {
     const el = track.current;
@@ -442,9 +444,15 @@ export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(functio
           const controller = new AbortController();
           if (!urgent) speculativeBusy = true;
           resources.pending.set(i, controller);
-          void server.acquireResource(pages[i].path, controller.signal).then(lease => {
+          const read = props.book.pdfPage
+            ? props.book.pdfPage(i, controller.signal).then(blob => {
+                const url = URL.createObjectURL(blob);
+                return { blob, url, release: () => URL.revokeObjectURL(url) };
+              })
+            : server.acquireResource(pages[i].path, controller.signal);
+          void read.then(lease => {
             if (resources.closed || controller.signal.aborted || !resources.wanted.has(i)) { lease.release(); return; }
-            resources.held.set(i, { ...lease, pixels: server.resourceRasterPixels(pages[i].path) });
+            resources.held.set(i, { ...lease, pixels: props.book.pdfPage ? 4_000_000 : server.resourceRasterPixels(pages[i].path) });
           }).catch(error => {
             if (!resources.closed && !controller.signal.aborted) { errors.current.set(i, String(error)); redraw(n => n + 1); }
           }).finally(() => {
@@ -694,9 +702,9 @@ export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(functio
       locate(p, units - p); seek.current = token;
     },
     diagnose: () => `comic ${position.current.page + 1}/${pages.length}; columns=${columns}; phase=${state().status}`,
-    getReadingAnchor: () => state().status === "ready" ? { path: CHAPTER, ...anchor(), mediaUnits: pages.length } : null,
+    getReadingAnchor: () => state().status === "ready" ? { path: chapter, ...anchor(), mediaUnits: pages.length } : null,
     getAnchorText: () => pages[position.current.page].path.split('/').pop() ?? null,
-    readPositionSnapshot: () => ({ chapterPath: CHAPTER, state: state(), readingAnchor: state().status === "ready" ? { path: CHAPTER, ...anchor(), mediaUnits: pages.length, mediaAnchor: anchor().mediaAnchor ?? null } : null, anchorText: pages[position.current.page].path.split('/').pop() ?? null }),
+    readPositionSnapshot: () => ({ chapterPath: chapter, state: state(), readingAnchor: state().status === "ready" ? { path: chapter, ...anchor(), mediaUnits: pages.length, mediaAnchor: anchor().mediaAnchor ?? null } : null, anchorText: pages[position.current.page].path.split('/').pop() ?? null }),
     resolveBookmarkPage(mark) {
       const p = comicPageForAnchor(pages, mark.mediaAnchor?.signature, mark.mediaAnchor?.index ?? mark.page ?? 0);
       return p === null ? null : scroll ? p : groupForPage[p];
@@ -786,6 +794,7 @@ export const ComicReaderView = forwardRef<ReaderHandle, ReaderViewProps>(functio
         else if (route.kind === "bookmark") latest.current.onBookmarkCornerTap?.(route.side);
         else if (route.kind === "center" || (scroll && route.kind === "turn")) latest.current.onPlainTap?.();
       }}>{strip}</div>
+    {props.book.pdfPage && <PdfPageJump page={page} count={pages.length} jump={i => { navigationPending.current = true; locate(i); }} />}
     <BookmarkRibbonLayer marks={marks} cue={props.bookmarkCue ?? null} motion={moving}/>
   </div>;
 });

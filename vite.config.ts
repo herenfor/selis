@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import { loadEnv } from "vite";
 import packageJson from "./package.json";
+import { pdfAssets } from "./scripts/pdf-assets.mjs";
 import react from "@vitejs/plugin-react";
 import { appNameForEdition, normalizeAppEdition } from "./src/config/editionValue";
 import { frontendOutDir, normalizeAppPlatform, shellForPlatform } from "./src/config/platformValue";
@@ -37,7 +38,7 @@ export default defineConfig(({ mode }) => {
       __APP_UPDATE_SOURCE__: JSON.stringify(updateSource),
       __MOBI_FORMAT__: JSON.stringify(mobiFormat),
     },
-    plugins: [react(), ...(edition === "ai" ? [aiCompanionDevAssets()] : []), {
+    plugins: [react(), pdfAssets(), ...(edition === "ai" ? [aiCompanionDevAssets()] : []), {
       name: "edition-manifest",
       transformIndexHtml(html) {
         // The browser tab follows the edition brand; native windows keep the

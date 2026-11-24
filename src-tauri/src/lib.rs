@@ -113,6 +113,9 @@ macro_rules! configure_invoke_handler {
             android_volume_key::android_volume_key_set_mode,
             linked_library::linked_library_read_source_raw,
             linked_library::linked_library_read_cover_raw,
+            linked_library::pdf_range::pdf_range_open,
+            linked_library::pdf_range::pdf_range_read,
+            linked_library::pdf_range::pdf_range_close,
             linked_library::linked_library_archive_open,
             linked_library::linked_library_archive_directory,
             linked_library::linked_library_archive_compact_directory,
@@ -319,6 +322,9 @@ macro_rules! configure_invoke_handler {
             android_volume_key::android_volume_key_set_mode,
             linked_library::linked_library_read_source_raw,
             linked_library::linked_library_read_cover_raw,
+            linked_library::pdf_range::pdf_range_open,
+            linked_library::pdf_range::pdf_range_read,
+            linked_library::pdf_range::pdf_range_close,
             linked_library::linked_library_archive_open,
             linked_library::linked_library_archive_directory,
             linked_library::linked_library_archive_compact_directory,
@@ -507,6 +513,7 @@ pub fn run() {
         .manage(FontWriteState::default())
         .manage(LinkedLibraryWriteState::default())
         .manage(linked_library::LibraryLocationState::default())
+        .manage(linked_library::pdf_range::PdfRanges::default())
         .manage(linked_library::NativeArchiveState::default())
         .manage(linked_library::ManagedImportState::default())
         .manage(directory_import::job::DirectoryImportState::default())
@@ -610,6 +617,7 @@ pub fn run() {
                 cloud_sync::commands::shutdown(app);
                 readest_import::shutdown(app);
                 koreader_import::shutdown(app);
+                linked_library::pdf_range::close_window(app, None);
                 linked_library::close_all_native_archives(app);
                 return;
             }
@@ -629,6 +637,7 @@ pub fn run() {
                     readest_import::shutdown(app);
                 koreader_import::shutdown(app);
                 }
+                linked_library::pdf_range::close_window(app, Some(label));
                 linked_library::close_native_archive_window(app, label);
             }
             #[cfg(mobile)]

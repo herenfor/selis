@@ -24,6 +24,7 @@ export interface BookFileType {
 }
 
 export const BOOK_FILE_TYPES: readonly BookFileType[] = [
+  { extension: "pdf", mime: "application/pdf", nativeOnly: true },
   { extension: "epub", mime: "application/epub+zip" },
   { extension: "fb2", mime: "application/x-fictionbook+xml", nativeOnly: true },
   { extension: "txt", mime: "text/plain" },

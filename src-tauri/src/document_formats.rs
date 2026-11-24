@@ -19,9 +19,10 @@ pub fn extension(name: &str) -> &str {
 pub fn supported(name: &str) -> bool {
     matches!(
         extension(name).to_ascii_lowercase().as_str(),
-        "epub" | "txt" | "cbz" | "zip" | "fb2" | "mobi" | "azw3"
+        "pdf" | "epub" | "txt" | "cbz" | "zip" | "fb2" | "mobi" | "azw3"
     )
 }
+pub fn pdf(name: &str) -> bool { extension(name).eq_ignore_ascii_case("pdf") }
 pub fn text(name: &str) -> bool {
     extension(name).eq_ignore_ascii_case("txt")
 }
@@ -145,6 +146,13 @@ pub(crate) fn inspect_reader<R: Read + Seek + Send>(
         return kindle::inspect_reader(reader, &title).map_err(|error| error.import_message());
     }
     if fictionbook(file_name) { return fb2::inspect(reader, &title); }
+    if pdf(file_name) {
+        let mut header = Vec::with_capacity(1024);
+        reader.take(1024).read_to_end(&mut header).map_err(|e| e.to_string())?;
+        if !header.windows(5).any(|w| w == b"%PDF-") { return Err("不是有效的 PDF 文件".into()); }
+        return Ok(ImportedMetadata { title, creator: String::new(), language: String::new(),
+            spine: vec!["__reader__/pdf.xhtml".into()], cover_zip_path: None, cover_mime: String::new() });
+    }
     if text(file_name) {
         // Import never decodes or duplicates a whole text book. The reader builds its resources on demand.
         return Ok(ImportedMetadata {

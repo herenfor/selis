@@ -72,8 +72,9 @@ export interface Resource {
 
 export interface Book {
   /** Original source kind; absent means EPUB for existing books. */
-  sourceFormat?: "epub" | "txt" | "comic-zip" | "fb2" | "mobi" | "azw3";
+  sourceFormat?: "epub" | "txt" | "comic-zip" | "fb2" | "mobi" | "azw3" | "pdf";
   textEncoding?: string;
+  pdfPage?: (index: number, signal: AbortSignal) => Promise<Blob>;
   comicPages?: Array<{ path: string; doublePage: boolean }>;
   version: 2 | 3;
   /** OPF 的已解析 ZIP 内部键 */

@@ -43,7 +43,7 @@ pub(super) fn is_epub(path: &Path) -> bool {
 pub(crate) fn canonical_epub_path(raw: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(raw);
     if !is_epub(&path) {
-        return Err("支持 EPUB、TXT、CBZ、FB2、MOBI 和 AZW3 文件".into());
+        return Err("支持 PDF、EPUB、TXT、CBZ、FB2、MOBI 和 AZW3 文件".into());
     }
     fs::canonicalize(&path).map_err(|error| format!("无法规范化源 EPUB 路径：{error}"))
 }

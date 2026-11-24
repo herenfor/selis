@@ -277,3 +277,7 @@ TXT decoding uses encoding_rs and chardetng, copyright Mozilla Foundation.
 Their MIT notices, including the encoding table BSD attribution, are retained
 in `third-party-licenses/txt-encoding-notices.txt`. The temporary resource file
 uses tempfile under its MIT option (notice in the same file).
+
+### Mozilla PDF.js
+
+The PDF reader bundles the browser build of `pdfjs-dist` 6.5.438 (Apache-2.0), Adobe CMaps, standard fonts, ICC data and the image decoders it uses. The original notices for each shipped component are included alongside the assets in `pdfjs/` and in `third-party-licenses/pdfjs/`.
