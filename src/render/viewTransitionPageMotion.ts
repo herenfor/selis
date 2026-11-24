@@ -36,6 +36,10 @@ const COVER_STYLE = `
   animation-duration: ${TRANSITION_DURATION_MS}ms;
   animation-timing-function: linear;
   animation-fill-mode: both;
+  /* The viewer itself is transparent (the page color lives on the host), so
+     the snapshot would let the other page's text show through. Paint the
+     page color under each snapshot; both pages stay opaque. */
+  background-color: var(--reader-turn-bg, #fff);
 }
 :root[data-turn-mode="cover"]::view-transition-old(${PAGE_NAME}) {
   animation-name: readerCoverOld;
@@ -224,6 +228,7 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     const origin = this.options.offsets[currentPage];
     const target = this.options.offsets[targetPage];
     const physicalNext = direction * pageAxisSign(this.options.progression) === 1;
+    this.doc.documentElement.style.setProperty("--reader-turn-bg", this.pageBackground());
     this.doc.documentElement.dataset.turnMode = "cover";
     this.doc.documentElement.dataset.turnDirection = physicalNext ? "next" : "prev";
     let transition: ViewTransitionLike;
@@ -376,6 +381,21 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
   private cleanup(): void {
     delete this.doc.documentElement.dataset.turnMode;
     delete this.doc.documentElement.dataset.turnDirection;
+    this.doc.documentElement.style.removeProperty("--reader-turn-bg");
+  }
+
+  /** The page color behind the transparent viewer: body first, then the host reader. */
+  private pageBackground(): string {
+    const win = this.doc.defaultView;
+    const body = this.doc.body;
+    const bodyBg = body && win ? win.getComputedStyle(body).backgroundColor : "";
+    if (bodyBg && bodyBg !== "transparent" && bodyBg !== "rgba(0, 0, 0, 0)") return bodyBg;
+    const frame = win?.frameElement as HTMLElement | null;
+    const host = frame?.parentElement;
+    const hostWin = host?.ownerDocument.defaultView;
+    const hostBg = host && hostWin ? hostWin.getComputedStyle(host).backgroundColor : "";
+    if (hostBg && hostBg !== "transparent" && hostBg !== "rgba(0, 0, 0, 0)") return hostBg;
+    return "#fff";
   }
 
   private installStyle(): HTMLStyleElement | null {
