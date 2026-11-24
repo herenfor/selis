@@ -16,10 +16,13 @@ import { childElements, localNameOf, type XmlElementLike } from "../core/xml";
  * is deliberately conservative: a caption, a link, a cover/kuchie/fullscreen
  * class, or an author rule **that actually matches this group or its pictures**
  * and asks for a row, grid or authored picture size keeps the original
- * structure. A rule elsewhere in the book for a different container must not
- * veto the fix, and a class-based picture size (`img.half { width: 49% }`) must
- * be honoured — so author CSS is matched against the real ancestor chain
- * instead of being scanned for class names.
+ * structure. An explicit gallery body (`gal`/`gallery`/`postcard`) is the one
+ * exception: `.cover` postcard groups and thumbnail widths are converted;
+ * kuchie/fullscreen, links, captions, inline sizes and author row/grid/float
+ * rules still veto. A rule elsewhere in the book for a different container
+ * must not veto the fix, and a class-based picture size (`img.half { width:
+ * 49% }`) must be honoured — so author CSS is matched against the real
+ * ancestor chain instead of being scanned for class names.
  *
  * The CSS that lays out a marked group lives here too, so the marker and its
  * layout cannot drift apart.
@@ -29,6 +32,9 @@ const GROUP_CLASS = "duokan-image-single";
 const ILLUS_CLASS = "illus";
 /** Authored cover/colour-page layouts stay untouched. */
 const EXCLUDED_FULLPAGE_CLASSES = new Set(["cover", "kuchie", "duokan-image-fullscreen"]);
+/** In an explicit gallery, `.cover` is a postcard group; real fullscreen pages still stay. */
+const GALLERY_EXCLUDED_FULLPAGE_CLASSES = new Set(["kuchie", "duokan-image-fullscreen"]);
+const GALLERY_BODY_CLASS_RE = /(?:^|\s)(?:gal|gallery|postcard)(?:\s|$)/u;
 
 /** One author rule flattened out of `<style>`/stylesheet text (at-rules included). */
 export interface AuthorCssRule {
@@ -37,6 +43,8 @@ export interface AuthorCssRule {
   readonly collageForGroup: boolean;
   /** A declaration that puts the pictures side by side or pins their size. */
   readonly collageForImage: boolean;
+  /** Image-level flex/grid/table/float: still a deliberate row inside a gallery. */
+  readonly layoutForImage: boolean;
 }
 
 export interface MultiImageGroupOptions {
@@ -44,6 +52,8 @@ export interface MultiImageGroupOptions {
   readonly chapterHasText: boolean;
   /** Author rules from this chapter's stylesheets, already flattened. */
   readonly authorRules: readonly AuthorCssRule[];
+  /** Explicit Duokan gallery body (`gal`/`gallery`/`postcard`): allow `.cover` groups and thumbnail widths. */
+  readonly galleryChapter?: boolean;
 }
 
 export interface MultiImageGroup {
@@ -69,6 +79,11 @@ function classTokens(el: XmlElementLike): string[] {
 
 function hasClass(el: XmlElementLike, name: string): boolean {
   return classTokens(el).includes(name);
+}
+
+/** Conservative gallery signal: only an explicit body class, never guessed from layout. */
+export function isGalleryChapterBodyClass(value: string | null | undefined): boolean {
+  return GALLERY_BODY_CLASS_RE.test(value ?? "");
 }
 
 /** `a { width: 50% }` style declarations, without comments or `!important`. */
@@ -117,6 +132,13 @@ function isCollageDeclaration(property: string, value: string, subject: CollageS
   return /^wrap(?:-reverse)?$/u.test(value);
 }
 
+/** Image-level layout that still vetoes a gallery conversion (not a thumbnail width). */
+function isImageLayoutDeclaration(property: string, value: string): boolean {
+  if (property === "float") return value !== "none";
+  if (property === "display") return /^(?:flex|inline-flex|grid|inline-grid|table|table-cell)$/u.test(value);
+  return false;
+}
+
 /**
  * Flattens authored stylesheet text into selectors + collage flags. Rules
  * inside `@media`/`@supports` are kept (treated as applicable) because a
@@ -136,6 +158,7 @@ export function parseAuthorCss(texts: readonly string[]): AuthorCssRule[] {
         selectors,
         collageForGroup: decls.some(([property, value]) => isCollageDeclaration(property, value, "group")),
         collageForImage: decls.some(([property, value]) => isCollageDeclaration(property, value, "image")),
+        layoutForImage: decls.some(([property, value]) => isImageLayoutDeclaration(property, value)),
       });
     }
   }
@@ -277,14 +300,18 @@ function hasCollageLayout(
   el: XmlElementLike,
   images: readonly XmlElementLike[],
   rules: readonly AuthorCssRule[],
+  gallery: boolean,
 ): boolean {
-  const relevant = rules.filter((rule) => rule.collageForGroup || rule.collageForImage);
+  const relevant = rules.filter(
+    (rule) => rule.collageForGroup || (gallery ? rule.layoutForImage : rule.collageForImage),
+  );
   if (relevant.length === 0) return false;
   const groupFacts = factsFrom(el);
   const imageFacts = images.map((image) => factsOf(image, [groupFacts, ...groupFacts.ancestors]));
   for (const rule of relevant) {
+    const imageLayout = gallery ? rule.layoutForImage : rule.collageForImage;
     for (const selector of rule.selectors) {
-      if (rule.collageForImage && imageFacts.some((facts) => selectorMatches(selector, facts))) return true;
+      if (imageLayout && imageFacts.some((facts) => selectorMatches(selector, facts))) return true;
       if (rule.collageForGroup && selectorMatches(selector, groupFacts)) return true;
     }
   }
@@ -308,19 +335,22 @@ function hasAuthoredGroupLayout(el: XmlElementLike): boolean {
 function isEligibleGroup(el: XmlElementLike, options: MultiImageGroupOptions): boolean {
   if (localNameOf(el) !== "div") return false;
   if (!hasClass(el, GROUP_CLASS)) return false;
-  if (classTokens(el).some((token) => EXCLUDED_FULLPAGE_CLASSES.has(token))) return false;
+  const gallery = options.galleryChapter === true;
+  const excluded = gallery ? GALLERY_EXCLUDED_FULLPAGE_CLASSES : EXCLUDED_FULLPAGE_CLASSES;
+  if (classTokens(el).some((token) => excluded.has(token))) return false;
   const children = childElements(el);
   if (children.length < 2) return false;
   if (!children.every((child) => localNameOf(child) === "img")) return false;
   if ((el.textContent ?? "").trim() !== "") return false;
   if (hasAuthoredGroupLayout(el)) return false;
-  if (hasCollageLayout(el, children, options.authorRules)) return false;
+  if (hasCollageLayout(el, children, options.authorRules, gallery)) return false;
   for (const image of children) {
     if (hasAuthoredImageSize(image)) return false;
   }
   // A text-free chapter is exactly the reproduction structure; a mixed chapter
-  // only converts an explicit `.illus` illustration block.
-  return !options.chapterHasText || hasClass(el, ILLUS_CLASS);
+  // only converts an explicit `.illus` illustration block. An explicit gallery
+  // body is the one exception: its `.cover` postcard groups are the content.
+  return gallery || !options.chapterHasText || hasClass(el, ILLUS_CLASS);
 }
 
 function collectGroups(
@@ -358,7 +388,9 @@ export function findMultiImageGroups(
 export function multiImageGroupCss(viewerId: string): string {
   return `/* [L3] 多看单图容器内的多图组（Issue #15）：每图一页，逐栏排列。
    仅 imageGroup.ts 判定为纯图章或 .illus 插图块时打标记；图注、链接、
-   作者拼图、封面/彩页与固定版式不进入这里。 */
+   作者拼图、封面/彩页与固定版式不进入这里。显式画廊章节（body.gal 等）
+   的 .cover 明信片组除外，但仍保留 kuchie/fullscreen、链接、图注和作者
+   行/网格/浮动规则。 */
 #${viewerId}:not([data-reader-vertical]) div[data-reader-image-group] {
   display: block !important;
   height: auto !important;

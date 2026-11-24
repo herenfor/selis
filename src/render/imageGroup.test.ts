@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseHTML } from "linkedom";
-import { findMultiImageGroups, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
+import { findMultiImageGroups, isGalleryChapterBodyClass, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
 
 function groups(
   bodyHtml: string,
-  options: { chapterHasText?: boolean; authorCss?: readonly string[] } = {},
+  options: { chapterHasText?: boolean; authorCss?: readonly string[]; galleryChapter?: boolean } = {},
 ) {
   const { document } = parseHTML(
     `<html><body><epub-viewer id="epub-viewer">${bodyHtml}</epub-viewer></body></html>`,
@@ -14,6 +14,7 @@ function groups(
   return findMultiImageGroups(viewer, {
     chapterHasText: options.chapterHasText ?? false,
     authorRules: parseAuthorCss(options.authorCss ?? []),
+    galleryChapter: options.galleryChapter ?? false,
   });
 }
 
@@ -72,6 +73,35 @@ describe("findMultiImageGroups", () => {
 
   it("keeps groups alone when a matching author rule asks for a row layout", () => {
     expect(groups(`<div class="duokan-image-single">${two}</div>`, { authorCss: [".duokan-image-single { display: flex; }"] })).toHaveLength(0);
+  });
+
+  it("converts .cover postcard groups in an explicit gallery chapter", () => {
+    const gallery = `<div class="cover duokan-image-single"><img class="bcv3" src="a.png"/><img class="bcv3" src="b.png"/></div><div class="cover duokan-image-single"><img class="bcv3" src="c.png"/><img class="bcv3" src="d.png"/></div>`;
+    const found = groups(gallery, {
+      chapterHasText: true,
+      galleryChapter: true,
+      authorCss: ["img.bcv3 { width: 30%; }"],
+    });
+    expect(found).toHaveLength(2);
+  });
+
+  it("still keeps fullscreen pages, author layouts and inline sizes in a gallery chapter", () => {
+    expect(groups(`<div class="kuchie duokan-image-single">${two}</div>`, { galleryChapter: true })).toHaveLength(0);
+    expect(groups(`<div class="duokan-image-fullscreen duokan-image-single">${two}</div>`, { galleryChapter: true })).toHaveLength(0);
+    expect(groups(`<div class="duokan-image-single">${two}</div>`, { galleryChapter: true, authorCss: [".duokan-image-single { display: grid; }"] })).toHaveLength(0);
+    expect(groups(`<div class="duokan-image-single">${two}</div>`, { galleryChapter: true, authorCss: ["img { float: left; }"] })).toHaveLength(0);
+    expect(groups(`<div class="duokan-image-single"><img src="a.png" width="300"/><img src="b.png"/></div>`, { galleryChapter: true })).toHaveLength(0);
+    expect(groups(`<div class="duokan-image-single"><img src="a.png"/></div>`, { galleryChapter: true })).toHaveLength(0);
+  });
+});
+
+describe("isGalleryChapterBodyClass", () => {
+  it("only accepts explicit gallery body classes", () => {
+    expect(isGalleryChapterBodyClass("gal")).toBe(true);
+    expect(isGalleryChapterBodyClass("foo gallery bar")).toBe(true);
+    expect(isGalleryChapterBodyClass("postcard")).toBe(true);
+    expect(isGalleryChapterBodyClass("gallery-wide")).toBe(false);
+    expect(isGalleryChapterBodyClass("")).toBe(false);
   });
 });
 

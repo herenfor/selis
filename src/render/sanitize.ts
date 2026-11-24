@@ -4,7 +4,7 @@ import { parseChapterDocument, STRIPPED_CHAPTER_TAGS } from "./chapterDocument";
 import { resolvePath, isFragmentOnly } from "../core/paths";
 import { hasAuthoredCssProperty, rewriteCssInlineWidths, rewriteCssUrls } from "./cssRewrite";
 import { isFullPageImage, linkedImagePage } from "./fullPageImage";
-import { findMultiImageGroups, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
+import { findMultiImageGroups, isGalleryChapterBodyClass, multiImageGroupCss, parseAuthorCss } from "./imageGroup";
 import { childElements, findElements, localNameOf } from "../core/xml";
 import { imageLayoutPolicy, scrollMediaDefaultsCss } from "./imageLayoutPolicy";
 import { buildThemeCss } from "./readerTheme";
@@ -586,12 +586,17 @@ export async function sanitizeChapter(
   // 在 5.4 宽度改写之前判定，保留作者原始的 width:100% 语义；固定版式与
   // 滚动不参与，作者拼图/图注/链接/封面彩页的排除见 imageGroup.ts。
   const bodyText = (bodyEl.textContent ?? "").trim();
+  // Conservative gallery signal: only an explicit body class, never a guessed
+  // layout. This is what lets a Duokan postcard chapter's `.cover` groups use
+  // the one-picture-per-page path without touching ordinary cover pages.
+  const galleryChapter = isGalleryChapterBodyClass(bodyEl.getAttribute("class"));
   const multiImageGroups =
     opts.fixedLayout === true || opts.settings.readingMode === "scroll"
       ? []
       : findMultiImageGroups(viewer, {
           chapterHasText: bodyText.length > 0,
           authorRules: parseAuthorCss(authorCssTexts),
+          galleryChapter,
         });
   for (const group of multiImageGroups) {
     (group.element as unknown as Element).setAttribute("data-reader-image-group", "duokan");

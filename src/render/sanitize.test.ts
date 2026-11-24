@@ -1259,6 +1259,24 @@ describe("Issue #15 多看单图容器内多图组", () => {
     expect(illusOut.html).toContain("后文");
   });
 
+  it("显式画廊 body 的 .cover 明信片组按多图组标记", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head>
+<style>img.bcv3 { width: 30%; }</style>
+</head><body class="gal"><div class="sx">明信片</div><div class="cover duokan-image-single"><img class="bcv3" src="a.png"/><img class="bcv3" src="b.png"/></div><div class="cover duokan-image-single"><img class="bcv3" src="c.png"/><img class="bcv3" src="d.png"/></div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+    expect((out.match(/data-reader-image-group="duokan"/g) ?? []).length).toBe(2);
+    expect(readStyleText(out, "multi-image-groups")).not.toBe("");
+  });
+
+  it("没有显式画廊 body 时，多组 .cover 明信片仍保持原排版", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head>
+<style>img.bcv3 { width: 30%; }</style>
+</head><body><div class="sx">明信片</div><div class="cover duokan-image-single"><img class="bcv3" src="a.png"/><img class="bcv3" src="b.png"/></div><div class="cover duokan-image-single"><img class="bcv3" src="c.png"/><img class="bcv3" src="d.png"/></div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+    expect(out).not.toContain("data-reader-image-group");
+    expect(readStyleText(out, "multi-image-groups")).toBe("");
+  });
+
   it("图注、链接、固定尺寸与作者拼图保持原结构", async () => {
     const cases: Array<[string, string]> = [
       ["图注", `<div class="duokan-image-single">${two}<p>图 1</p></div>`],
@@ -1266,7 +1284,6 @@ describe("Issue #15 多看单图容器内多图组", () => {
       ["外层链接", `<a href="x.xhtml"><div class="duokan-image-single">${two}</div></a>`],
       ["固定宽度", `<div class="duokan-image-single"><img src="a.png" width="300"/><img src="b.png"/></div>`],
       ["内联 50%", `<div class="duokan-image-single"><img src="a.png" style="width:50%"/><img src="b.png"/></div>`],
-      ["容器 50%", `<div class="duokan-image-single" style="width:50%">${two}</div>`],
     ];
     for (const [name, body] of cases) {
       const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`;
@@ -1274,6 +1291,12 @@ describe("Issue #15 多看单图容器内多图组", () => {
       expect(out, name).not.toContain("data-reader-image-group");
       expect(readStyleText(out, "multi-image-groups"), name).toBe("");
     }
+  });
+
+  it("较窄的容器仍按多图组标记，保留作者容器宽度", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="duokan-image-single" style="width:50%">${two}</div></body></html>`;
+    const { html: out } = await sanitizeChapter(html, opts());
+    expect(out).toContain('data-reader-image-group="duokan"');
   });
 
   it("作者样式表声明 50% 双图时不转换", async () => {
