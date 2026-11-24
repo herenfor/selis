@@ -112,11 +112,11 @@ export function arrowKeyDirection(dir: 1 | -1, key: string | undefined, progress
   return dir === 1 ? -1 : 1;
 }
 
-/** slide：内容跟手平移；fade：落位轻推淡入；none：瞬翻。 */
-export type TurnAnimation = "slide" | "fade" | "none";
+/** slide：内容跟手平移；cover：当前页滑出、目标页露出；fade：落位轻推淡入；none：瞬翻。 */
+export type TurnAnimation = "slide" | "cover" | "fade" | "none";
 
 export function normalizeTurnAnimation(value: unknown): TurnAnimation {
-  return value === "fade" || value === "none" ? value : "slide";
+  return value === "cover" || value === "fade" || value === "none" ? value : "slide";
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {

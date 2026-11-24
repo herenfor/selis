@@ -45,6 +45,7 @@ import { readBookTypography, type BookTypography } from "./bookTypographyProbe";
 
 const TURN_ANIMATION_OPTIONS: ReadonlyArray<{ value: TurnAnimation; labelKey: PlainMessageKey }> = [
   { value: "slide", labelKey: "aa.turn.slide" },
+  { value: "cover", labelKey: "aa.turn.cover" },
   { value: "fade", labelKey: "aa.turn.fade" },
   { value: "none", labelKey: "aa.turn.none" },
 ];

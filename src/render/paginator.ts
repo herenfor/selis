@@ -14,7 +14,8 @@ import { planCenteredTitleBody } from "./titlePageLayout";
 import { desktopSettlePlan, PageMotionSession, settlePlan } from "./pageMotion";
 import type { Direction as MotionDirection } from "./pageMotion";
 import { TransformPageMotion } from "./transformPageMotion";
-import type { MotionCompanion } from "./transformPageMotion";
+import type { MotionCompanion, PageMotionSurfaceDriver } from "./transformPageMotion";
+import { ViewTransitionPageMotion } from "./viewTransitionPageMotion";
 import { MotionWindowIdleLease } from "./motionWindowIdleLease";
 import { chooseNativeSwipeOwner, planPagedStep, readSnapPosition, visibleSnapColumnSampleX } from "./nativeSnapPosition";
 import type { PagedStepPlan, SnapPosition } from "./nativeSnapPosition";
@@ -378,11 +379,13 @@ export class ChapterPaginator {
    * 不支持时触摸退回原生吸附，桌面继续使用原有数值动画。
    */
   private slideMotionWanted = false;
+  /** 覆盖翻页：正文 iframe 内的 View Transition 快照，不走合成窗口。 */
+  private coverMotionWanted = false;
   private motionWindowForeground = false;
   /** 当前布局的运动会话；布局/章节/视口改变时销毁。 */
   private pageMotion: {
     session: PageMotionSession;
-    driver: TransformPageMotion;
+    driver: PageMotionSurfaceDriver;
     lease: MotionWindowIdleLease;
     key: string;
     viewer: HTMLElement;
@@ -743,10 +746,31 @@ export class ChapterPaginator {
    */
   setNativeSnapPaging(enabled: boolean): void {
     this.slideMotionWanted = enabled;
-    if (!enabled) this.disposePageMotion();
+    if (!enabled && !this.coverMotionWanted) this.disposePageMotion();
     this.nativeSnapEnabled = enabled;
     this.syncNativeSnapViewer();
     if (enabled && this.isDisplayReady) this.prepareMotion();
+  }
+
+  /**
+   * 覆盖翻页开关。与滑动互斥：开启时关掉原生吸附并重建运动会话，关闭时
+   * 交回滑动（如果滑动也开着）或直接释放。
+   */
+  setCoverPaging(enabled: boolean): void {
+    if (this.coverMotionWanted === enabled) return;
+    this.coverMotionWanted = enabled;
+    if (enabled) {
+      this.slideMotionWanted = false;
+      this.nativeSnapEnabled = false;
+      this.syncNativeSnapViewer();
+      this.disposePageMotion();
+      if (this.isDisplayReady) this.prepareMotion();
+      return;
+    }
+    // Turning cover off always rebuilds: an existing cover driver must not
+    // keep serving a slide/fade mode just because the layout key matches.
+    this.disposePageMotion();
+    if (this.slideMotionWanted && this.isDisplayReady) this.prepareMotion();
   }
 
   /** Only the visible foreground chapter retains a bounded compositor window. */
@@ -1040,9 +1064,11 @@ export class ChapterPaginator {
 
   /** 同章滑动共用运动会话；指针类型只决定曲线，不决定是否走合成驱动。 */
   get pageMotionAvailable(): boolean {
+    const wanted = this.slideMotionWanted || this.coverMotionWanted;
     return Boolean(
-      this.motionWindowForeground && this.slideMotionWanted && this.viewer && !this.scrollMode && !this.disposed &&
+      this.motionWindowForeground && wanted && this.viewer && !this.scrollMode && !this.disposed &&
       this.pageMotionCapable() &&
+      (!this.coverMotionWanted || ViewTransitionPageMotion.supported(this.contentDoc)) &&
       this.pageMotionUnsupportedKey !== this.snapOffsetsCache?.key,
     );
   }
@@ -1176,23 +1202,35 @@ export class ChapterPaginator {
       return null;
     }
     const start = this.readPagedScroll();
-    const driver = new TransformPageMotion(
-      viewer,
-      {
-        offsets,
-        step,
-        columnsPerScreen: columns,
-        progression: this.flowProgression,
-        nativeVerticalFlow: Boolean(this.verticalMode),
-      },
-      start,
-      (error) => this.onPageMotionFault(error),
-      (position) => {
-        if (!this.disposed && this.viewer === viewer) {
-          this.writePagedScroll(position);
-        }
-      },
-    );
+    const writeRest = (position: number): void => {
+      if (!this.disposed && this.viewer === viewer) this.writePagedScroll(position);
+    };
+    const driver: PageMotionSurfaceDriver = this.coverMotionWanted
+      ? new ViewTransitionPageMotion({
+          viewer,
+          offsets,
+          step,
+          progression: this.flowProgression,
+          preview: (position) => {
+            if (!this.disposed && this.viewer === viewer) this.previewPagedScroll(position);
+          },
+          writeRest,
+          read: () => this.readPagedScroll(),
+          onFault: (error) => this.onPageMotionFault(error),
+        })
+      : new TransformPageMotion(
+          viewer,
+          {
+            offsets,
+            step,
+            columnsPerScreen: columns,
+            progression: this.flowProgression,
+            nativeVerticalFlow: Boolean(this.verticalMode),
+          },
+          start,
+          (error) => this.onPageMotionFault(error),
+          writeRest,
+        );
     const session = new PageMotionSession(
       driver,
       offsets,
@@ -6995,6 +7033,12 @@ export class ChapterPaginator {
     this.reflowTimer = window.setTimeout(() => {
       this.reflowTimer = undefined;
       if (this.disposed || seq !== this.loadSeq) return;
+      // 翻页快照/运动在途：图片或字体加载触发的重排会拆掉当前驱动，
+      // 让动画停在半页。等运动落定后再重排，最多多等一个收尾时长。
+      if (this.pageMotion?.driver.active) {
+        this.scheduleReflow();
+        return;
+      }
       // 本章首次显示还未结算：样式表/图片的 load 事件早于入口恢复时，非锚点
       // 重排会在 recomputeInner 里把待恢复目标换成章首页心采样，随后恢复只能
       // 解析到章首并当作成功写回（ER-0090）。等这一轮结算后再按当时内容重排。
@@ -7015,6 +7059,10 @@ export class ChapterPaginator {
    *  不捕获锚点：直接使用上一次稳定状态存下的锚点（缩放前的位置）。 */
   reflow(): void {
     if (this.disposed) return;
+    if (this.pageMotion?.driver.active) {
+      this.scheduleReflow();
+      return;
+    }
     // 本次加载还在首次显示准备中（测量→入口恢复）：不并行另起一轮 measure。
     // 两轮共用同一 loadSeq，互相还原/改写几何与文本索引，会把保存位置
     // 解析到章首并被当作恢复结果写回（ER-0090）。等这一轮结算后再按当时

@@ -102,6 +102,12 @@ describe("saved reader settings", () => {
     expect(readSavedSettings()).toMatchObject({ theme: "dark", preloadNextChapter: true });
   });
 
+  it("保留覆盖翻页设置", () => {
+    installStorage();
+    writeSavedSettings(toSavedReaderSettings({ ...DEFAULT_SETTINGS, turnAnimation: "cover" }, 1));
+    expect(readSavedSettings().turnAnimation).toBe("cover");
+  });
+
   it("saves a user theme as its colors plus a built-in fallback for older versions", () => {
     const dark = toSavedReaderSettings({ ...DEFAULT_SETTINGS, theme: "c:141b26a9b8c96ea8dc" }, 1);
     expect(dark).toMatchObject({ theme: "dark", themeColors: "c:141b26a9b8c96ea8dc" });
