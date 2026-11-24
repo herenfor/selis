@@ -15,6 +15,7 @@ import { SELECTION_SEARCH_ENGINES, useSelectionSearchEngine } from "./selectionS
 
 /** Reading preferences shared by Settings › Reading on the shelf and the in-reader layer. */
 export interface ReadingSettingsProps {
+  bookContentPermissions?: Omit<BookContentPermissionControls, "renderPermissions">;
   textEncoding?: string;
   onTextEncodingChange?(encoding: string): void;
   tapRegions?: ReaderTapRegionSettings;
@@ -110,9 +111,29 @@ export function ReadingSettingsContent(props: ReadingSettingsProps) {
   if (props.batteryIndicatorEnabled !== undefined && props.onBatteryIndicatorChange) {
     switches.push(<SettingsSwitchRow key="battery" title={t("shelfMenu.battery.tip")} checked={props.batteryIndicatorEnabled} onChange={props.onBatteryIndicatorChange} />);
   }
+  const bookContent = props.bookContentPermissions?.available ? props.bookContentPermissions : undefined;
   const tapReset = props.tapRegions ? tapRegionsReset(props.tapRegions.preferences, props.tapRegions.device) : null;
   // Groups: label outside, one card each; the tap preview sits directly in its card.
   return <>
+    {bookContent && <section className="shelf-settings-group">
+      <div className="shelf-settings-group-head">
+        <span className="shelf-settings-group-label">{t("shelfSettings.group.bookContent")}</span>
+      </div>
+      <div className="shelf-settings-card is-list">
+        <SettingsSwitchRow
+          title={t("shelfSettings.bookNetwork")}
+          detail={t("shelfSettings.bookNetwork.detail")}
+          checked={bookContent.networkEnabled}
+          onChange={bookContent.setNetworkEnabled}
+        />
+        <SettingsSwitchRow
+          title={t("shelfSettings.bookJavascript")}
+          detail={t("shelfSettings.bookJavascript.detail")}
+          checked={bookContent.javascriptEnabled}
+          onChange={bookContent.setJavascriptEnabled}
+        />
+      </div>
+    </section>}
     {props.tapRegions && props.onTapRegionsChange && <section className="shelf-settings-group">
       <div className="shelf-settings-group-head">
         <span className="shelf-settings-group-label">{t("tapRegions.title")}</span>
@@ -148,7 +169,6 @@ export function ReadingSettingsContent(props: ReadingSettingsProps) {
 }
 
 export interface ReaderReadingSettingsProps extends ReadingSettingsProps {
-  bookContentPermissions?: Omit<BookContentPermissionControls, "renderPermissions">;
   open: boolean;
   /** "dialog" on desktop, "page" (full screen) on touch — same split as the shelf settings. */
   presentation: "dialog" | "page";

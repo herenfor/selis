@@ -55,6 +55,9 @@ export interface TitleBarProps {
   /** AI 助手 / 设置 */
   onToggleAssistant?: () => void;
   assistantOpen?: boolean;
+  /** 阅读设置弹窗开关（桌面端；手机从底部“更多”进入） */
+  onToggleReadingSettings?: () => void;
+  readingSettingsOpen?: boolean;
   /** 日志 / 诊断 */
   onToggleLog?: () => void;
   logOpen?: boolean;
@@ -96,6 +99,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onToggleFullscreen,
   assistantOpen,
   onToggleAssistant,
+  onToggleReadingSettings,
+  readingSettingsOpen,
   logOpen,
   onToggleLog,
   onHistoryBack,
@@ -155,7 +160,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
   // 当有子菜单/抽屉打开时，必须保持顶栏可见，不触发沉浸收起
   const isAnyMenuOpen = Boolean(
-    sidebarOpen || appearanceOpen || searchOpen || assistantOpen || logOpen || tabMenuOpen
+    sidebarOpen || appearanceOpen || searchOpen || readingSettingsOpen || assistantOpen || logOpen || tabMenuOpen
   );
 
   // 沉浸模式快捷键（Alt 键呼出/收起）与鼠标顶部感应监听 + 翻页/滚动自动滑隐
@@ -520,6 +525,24 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   aria-pressed={!zenMode}
                 >
                   <PinIcon size={14} pinned={!zenMode} />
+                </button>
+              )}
+
+              {/* 阅读设置：手机从底部更多层进入。 */}
+              {!mobileCompact && onToggleReadingSettings && (
+                <button
+                  type="button"
+                  className={`titlebar-action-btn titlebar-reading-settings-btn${readingSettingsOpen ? " active" : ""}`}
+                  onClick={onToggleReadingSettings}
+                  title={t("appUi.reading.title")}
+                  aria-label={t("appUi.reading.title")}
+                  aria-expanded={readingSettingsOpen}
+                  aria-haspopup="dialog"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
                 </button>
               )}
 

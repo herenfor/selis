@@ -2181,6 +2181,11 @@ export default function App() {
     else openPanel("search");
   }, [closePanel, openPanel, searchOpen]);
 
+  const toggleReadingSettingsPanel = useCallback((): void => {
+    if (readingSettingsOpen) closePanel("reading");
+    else openPanel("reading");
+  }, [closePanel, openPanel, readingSettingsOpen]);
+
   const handleReaderPlainTap = useCallback((): void => {
     if (
       !mobileChrome ||
@@ -2690,6 +2695,8 @@ export default function App() {
             : undefined
         }
         assistantOpen={view === "reader" && assistantOpen}
+        onToggleReadingSettings={view === "reader" && !mobileChrome ? toggleReadingSettingsPanel : undefined}
+        readingSettingsOpen={view === "reader" && readingSettingsOpen}
       />
       {mobileChrome && view === "reader" && !readerToolsVisible && (
         <button

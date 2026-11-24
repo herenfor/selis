@@ -270,4 +270,43 @@ describe("CSD TitleBar 组件与样式契约（Zen UI Packet A）", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("桌面阅读顶栏展示阅读设置入口并防沉浸收起，触屏顶栏不展示", () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    try {
+      const closed = renderToStaticMarkup(createElement(TitleBar, {
+        view: "reader",
+        title: "Book",
+        onBackToShelf: () => {},
+        onToggleReadingSettings: () => {},
+        readingSettingsOpen: false,
+      }));
+      expect(closed).toContain("titlebar-reading-settings-btn");
+      expect(closed).toContain('aria-label="阅读设置"');
+      expect(closed).toContain('aria-haspopup="dialog"');
+      expect(closed).not.toContain('titlebar-reading-settings-btn active');
+
+      const opened = renderToStaticMarkup(createElement(TitleBar, {
+        view: "reader",
+        title: "Book",
+        zenMode: true,
+        onBackToShelf: () => {},
+        onToggleReadingSettings: () => {},
+        readingSettingsOpen: true,
+      }));
+      expect(opened).toMatch(/titlebar-reading-settings-btn active"[^>]*aria-expanded="true"/);
+      expect(opened).not.toContain("zen-hidden");
+
+      const mobile = renderToStaticMarkup(createElement(TitleBar, {
+        view: "reader",
+        mobileCompact: true,
+        title: "Book",
+        onBackToShelf: () => {},
+        onToggleReadingSettings: () => {},
+      }));
+      expect(mobile).not.toContain("titlebar-reading-settings-btn");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
