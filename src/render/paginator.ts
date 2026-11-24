@@ -62,7 +62,7 @@ import type { PlainTapInfo, PlainTapPoint } from "./plainTap";
 import { clientXToColumnX, columnForContentPoint, commitSpreadPosition, createSpreadGeometry, createSpreadLayout, bookmarkPageFrames, laneForColumn, occupiedColumns, spreadForColumn, spreadStart, visibleColumnInterval, visibleLeafRange } from "./pagedSpread";
 import type { BookmarkPageFrame, PagedViewportPort, SpreadGeometry, SpreadLayout } from "./pagedSpread";
 import {
-  releasePageBackgroundSlot,
+  preparePageBackground, releasePageBackgroundSlot,
   resolveStationarySpreadOrigin,
   syncDualPageBackground,
   type PageBackgroundSlot,
@@ -1778,8 +1778,8 @@ export class ChapterPaginator {
     // 原生菜单只放行文本编辑区域；只有有效正文选区才回调阅读器 UI。
     doc.addEventListener("contextmenu", this.contextMenuHandler);
     doc.addEventListener("selectionchange", this.selectionChangeHandler);
-    void this.prepareChapterForDisplay(seq, atEnd)
-      .then((prepared) => {
+    void Promise.all([this.prepareChapterForDisplay(seq, atEnd), preparePageBackground(doc)])
+      .then(([prepared]) => {
         if (!prepared || seq !== this.loadSeq || this.disposed) {
           if (seq === this.loadSeq && this.disposed === false) this.finishDisplayReady(seq, false);
           return;

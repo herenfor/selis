@@ -137,6 +137,34 @@ function backgroundSource(doc: Document): HTMLElement | null {
   return null;
 }
 
+/** Start decoding local canvas artwork while the chapter is still hidden and being paginated. */
+export function preparePageBackground(doc: Document): Promise<void> | undefined {
+  const win = doc.defaultView;
+  if (!win || typeof win.HTMLImageElement?.prototype.decode !== "function") return;
+  let image = doc.documentElement.getAttribute(PAGE_BACKGROUND_SOURCE_ATTR) ?? doc.body.getAttribute(PAGE_BACKGROUND_SOURCE_ATTR);
+  if (!image) {
+    const source = backgroundSource(doc);
+    if (!source) return;
+    image = win.getComputedStyle(source).backgroundImage;
+  }
+  // Computed styles serialize CSS URLs with double quotes. ResourceServer supplies blob URLs.
+  const urls = new Set(Array.from(image.matchAll(/url\("(blob:[^"\s]+)"\)/g), (match) => match[1]));
+  if (!urls.size) return;
+  const decoding = Array.from(urls, (url) => {
+    const probe = doc.createElement("img");
+    probe.src = url;
+    return probe.decode();
+  });
+  return new Promise((resolve) => {
+    // Decorative artwork must not indefinitely hold up navigation on a slow decoder.
+    const timer = win.setTimeout(resolve, 200);
+    void Promise.allSettled(decoding).then(() => {
+      win.clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 export function installPageBackgroundLanes(doc: Document): PageBackgroundLanes | null {
   const source = backgroundSource(doc);
   const body = doc.body;

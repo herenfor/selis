@@ -6,6 +6,7 @@ import {
   PAGE_BACKGROUND_LANE_TAG,
   PAGE_BACKGROUND_SOURCE_ATTR,
   installPageBackgroundLanes,
+  preparePageBackground,
 } from "./pageBackgroundLanes";
 
 /** linkedom has no cascade: computed values come straight from inline styles. */
@@ -24,6 +25,55 @@ function chapter(bodyStyle: string, rootStyle = ""): Document {
 }
 
 const lanesOf = (doc: Document) => Array.from(doc.querySelectorAll(PAGE_BACKGROUND_LANE_TAG)) as HTMLElement[];
+
+describe("chapter background decoding", () => {
+  function fixture(css: string, decode: () => Promise<void>) {
+    const images: { src: string; decode: typeof decode }[] = [];
+    const root = { getAttribute: () => null };
+    const body = { getAttribute: () => null };
+    const doc = {
+      documentElement: root, body,
+      defaultView: {
+        HTMLImageElement: { prototype: { decode } }, setTimeout, clearTimeout,
+        getComputedStyle: (el: unknown) => ({ backgroundImage: el === body ? css : "none" }),
+      },
+      createElement: () => {
+        const image = { src: "", decode };
+        images.push(image);
+        return image;
+      },
+    } as unknown as Document;
+    return { doc, images };
+  }
+
+  it("only waits for local page artwork, decoding each URL once", async () => {
+    let finish!: () => void;
+    const decode = () => new Promise<void>((resolve) => { finish = resolve; });
+    const { doc, images } = fixture('url("blob:book/bg"), url("blob:book/bg"), url("https://example.org/bg")', decode);
+    const done = vi.fn();
+    const pending = preparePageBackground(doc)!.then(done);
+    await Promise.resolve();
+    expect(images.map((image) => image.src)).toEqual(["blob:book/bg"]);
+    expect(done).not.toHaveBeenCalled();
+    finish();
+    await pending;
+    expect(done).toHaveBeenCalledOnce();
+    expect(preparePageBackground(fixture("none", decode).doc)).toBeUndefined();
+  });
+
+  it("allows display when background decoding fails or stalls", async () => {
+    vi.useFakeTimers();
+    try {
+      const css = 'url("blob:book/bg")';
+      await preparePageBackground(fixture(css, () => Promise.reject(new Error("invalid image"))).doc);
+      const stalled = preparePageBackground(fixture(css, () => new Promise<void>(() => {})).doc);
+      await vi.advanceTimersByTimeAsync(200);
+      await stalled;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("page background lanes (A12)", () => {
   it("does nothing for a chapter without a page background image", () => {
