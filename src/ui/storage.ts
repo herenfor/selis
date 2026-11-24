@@ -92,7 +92,7 @@ export interface SavedSettings {
   /** 章节间连续滑动（需高性能预读）；旧设置缺省为 false。只存本机，不进存档。 */
   seamlessChapterTurn?: boolean;
   /** 翻页动画；旧设置缺省为滑动 */
-  turnAnimation?: "slide" | "fade" | "none";
+  turnAnimation?: "slide" | "cover" | "fade" | "none";
   /** 翻页方向；旧设置缺省为跟随书籍。只存本机，不进存档。 */
   pageDirection?: "book" | "ltr";
   /** 封面/单图页全屏铺满；旧设置缺省为开启。只存本机，不进存档。 */

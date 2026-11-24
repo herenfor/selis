@@ -610,11 +610,17 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     const value = normalizeTurnAnimation(settings.turnAnimation);
     return value !== "none" && prefersReducedMotion() ? "none" : value;
   };
+  /** 同章运动会话负责的档位：滑动与覆盖。 */
+  const isMotionTurn = (): boolean => {
+    const mode = resolvedTurnAnimation();
+    return mode === "slide" || mode === "cover";
+  };
   /**
    * “滑动”翻页时同章触摸翻页交给分页器：可中断的合成层运动（不支持时退回原生
    * 滚动 + 吸附），见 ChapterPaginator.setNativeSnapPaging。
    */
   const nativeSnapWantedRef = useRef(false);
+  const coverMotionWantedRef = useRef(false);
   /** 运动层接手的本次拖动；松手由翻页接续或下一微任务回到起点屏。 */
   const motionDragRef = useRef<{ ticket: number; samples: Array<{ t: number; x: number }> } | null>(null);
   /** 每个独立翻页操作一个单调 ID（同一操作派生的回调共用）。 */
@@ -673,10 +679,13 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   const notesForChapterRef = useRef(props.notesForChapter);
   notesForChapterRef.current = props.notesForChapter;
   nativeSnapWantedRef.current = resolvedTurnAnimation() === "slide";
+  coverMotionWantedRef.current = resolvedTurnAnimation() === "cover";
 
   /** 淡入模式的落位动画；滑动模式由 startSlideTurn / 跨章滑入自行绘制。 */
   const triggerTurnAnimation = (dir: 1 | -1) => {
-    if (resolvedTurnAnimation() !== "fade") {
+    const mode = resolvedTurnAnimation();
+    // 覆盖模式在驱动不可用/章边时退化为淡入，不静默变成瞬翻。
+    if (mode !== "fade" && mode !== "cover") {
       setTurnAnim(null);
       return;
     }
@@ -1209,6 +1218,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       props.textProjection ?? null,
     );
     paginator.setNativeSnapPaging?.(nativeSnapWantedRef.current);
+    paginator.setCoverPaging?.(coverMotionWantedRef.current);
     paginator.setLayoutSettledHandler?.(() => {
       // 预载/过期槽的重排不属于当前配对；首次显示仍只走 display-ready。
       if (slot.ready && isActiveSlot(slot) && slot.spineIndex === spineIndexRef.current) onLayoutSettledRef.current?.();
@@ -3045,7 +3055,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
       if (immediate === 1) props.onRequestChapter(adjacent);
       else props.onRequestChapter(adjacent, { atEnd: true });
     };
-    if (p.pageMotionAvailable && resolvedTurnAnimation() === "slide") {
+    if (p.pageMotionAvailable && isMotionTurn()) {
       // 运动层：拖动松手属于同一手势，接续拖动；其他都是新的独立输入。
       const motionDrag = motionDragRef.current;
       motionDragRef.current = null;
@@ -3184,7 +3194,7 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
     if (followJoin()) { props.onBoundarySwipePreview?.(null); return; }
     // 联动进行中（含被新手势打断）：这次拖动属于联动。
     if (followSeam()) { props.onBoundarySwipePreview?.(null); return; }
-    if (p && resolvedTurnAnimation() === "slide" && p.pageMotionAvailable) {
+    if (p && isMotionTurn() && p.pageMotionAvailable) {
       let motionDrag = motionDragRef.current;
       if (!motionDrag) {
         const ticket = p.motionBeginDrag(direction);
@@ -3314,9 +3324,14 @@ const PagedReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Paged
   }, [props.inputPaused]);
 
   useEffect(() => {
-    const wanted = nativeSnapWantedRef.current;
-    activeSlotRef.current?.paginator?.setNativeSnapPaging?.(wanted);
-    for (const slot of spareSlotsRef.current) slot.paginator?.setNativeSnapPaging?.(wanted);
+    const slide = nativeSnapWantedRef.current;
+    const cover = coverMotionWantedRef.current;
+    activeSlotRef.current?.paginator?.setNativeSnapPaging?.(slide);
+    activeSlotRef.current?.paginator?.setCoverPaging?.(cover);
+    for (const slot of spareSlotsRef.current) {
+      slot.paginator?.setNativeSnapPaging?.(slide);
+      slot.paginator?.setCoverPaging?.(cover);
+    }
   }, [settings.turnAnimation]);
 
   useImperativeHandle(

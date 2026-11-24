@@ -41,7 +41,24 @@ export interface MotionCompanion {
   readonly origin: number;
 }
 
-export class TransformPageMotion implements PageMotionDriver {
+/**
+ * The surface a page-motion session drives. TransformPageMotion moves a
+ * compositor window; ViewTransitionPageMotion animates browser snapshots.
+ * The extra members are no-ops for drivers that do not own a window.
+ */
+export interface PageMotionSurfaceDriver extends PageMotionDriver {
+  /** True while this driver owns the current visual movement. */
+  readonly active: boolean;
+  /** Logical scrollLeft of the retained compositor window, or null. */
+  readonly windowScroll: number | null;
+  /** Stop at a position and restore normal geometry. */
+  holdSettledAt(position: number): void;
+  settleTo(position: number): void;
+  expediteLanding(): void;
+  setCompanions(companions: readonly MotionCompanion[]): void;
+}
+
+export class TransformPageMotion implements PageMotionSurfaceDriver {
   private running: Animation | null = null;
   private releaseBusy: (() => void) | null = null;
   private companions: readonly MotionCompanion[] = [];

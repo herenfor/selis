@@ -6,6 +6,7 @@ import { defineMessages } from "../defineMessages";
  */
 export const aa = defineMessages("aa", {
   "aa.turn.slide": { zh: "滑动", note: "Page-turn animation option.", max: 8 },
+  "aa.turn.cover": { zh: "覆盖", note: "Page-turn animation option: the current page slides away and reveals the next.", max: 8 },
   "aa.turn.fade": { zh: "淡入", note: "Page-turn animation option.", max: 8 },
   "aa.turn.none": { zh: "无", note: "Page-turn animation option: none.", max: 8 },
   "aa.theme.light": { zh: "白底", note: "Theme name: white paper.", max: 8 },
