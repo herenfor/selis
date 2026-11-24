@@ -28,6 +28,13 @@ const summary = (spineIndex: number, current: SingleLeafSpread | null) => {
 };
 
 describe("planPresentationLayers", () => {
+  it("cover prepares adjacent spreads without parking a paged reader beyond them", () => {
+    const plan = planPresentationLayers(book, 0, cover, peek, {
+      key: "paged", spineIndex: 0, immediateOnly: true, warmDirection: 1,
+    });
+    expect(plan.layers.map(layer => layer.key)).toEqual(["pair:0:1", "pair:2:3"]);
+    expect(plan.lookaheadIndex).toBe(-1);
+  });
   it("keeps one extra pair ahead for rapid turns, reuses it on promotion and respects the budget gate", () => {
     const longer = { spine: Array.from({ length: 10 }, (_, i) => ({ idref: String(i), linear: true })) } as unknown as Book;
     const groups = [cover, contents, { left: 4, right: 5 }, { left: 6, right: 7 }];

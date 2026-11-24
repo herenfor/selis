@@ -132,6 +132,8 @@ export function planPresentationLayers(
   peek: (index: number) => SingleLeafSpread | null | undefined,
   resident?: {
     key: PagedLayerKey; spineIndex: number; warmDirection?: -1 | 0 | 1;
+    /** Cover only needs the immediate neighbour in each direction. */
+    immediateOnly?: boolean;
     /**
      * A16-3：开书预备计划（frontRunPlan）的正向各屏，第一项是当前屏；waitingFor 是计划还在等
      * 叶数的普通章，也排进它那一段，排好后才能知道段在哪里结束。
@@ -151,7 +153,7 @@ export function planPresentationLayers(
   let parked = spineIndex;
   if (current) {
     let index = nextIndex;
-    for (let step = 0; index >= 0 && step < PARK_SEARCH_LIMIT; step++) {
+    for (let step = 0; !resident?.immediateOnly && index >= 0 && step < PARK_SEARCH_LIMIT; step++) {
       const spread = peek(index);
       if (!spread) break;
       index = nextLinearIndex(book, spread.right ?? spread.left, 1);
@@ -190,7 +192,7 @@ export function planPresentationLayers(
   // Short front-matter chapters can be consumed faster than a cold iframe
   // prepares. Keep just one extra pair ahead of the recent reading direction,
   // so it is already resident when the immediate neighbour is promoted.
-  const direction = resident?.warmDirection ?? 0;
+  const direction = resident?.immediateOnly ? 0 : resident?.warmDirection ?? 0;
   const adjacentPair = direction === 1 ? nextPair : direction === -1 ? prevPair : null;
   const lookaheadIndex = adjacentPair ? nextLinearIndex(book,
     direction === 1 ? adjacentPair.right ?? adjacentPair.left : adjacentPair.left, direction as 1 | -1) : -1;

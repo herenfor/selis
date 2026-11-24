@@ -72,7 +72,8 @@ import { ChapterPreloadSchedule } from "./chapterPreloadSchedule";
 import { useSeamPreparation } from "./useSeamPreparation";
 import { planFrontRun } from "./frontRunPlan";
 import { canJoinChapters, chapterFillLayoutKey, joinLaneClip, type JoinLeaves } from "./chapterJoin";
-import { PAGED_LAYER, planPresentationLayers, planSeamTrack, standbyReaderProps, type PagedLayerKey, type PresentationLayer, type PresentationPlan } from "./presentationStack";
+import { presentationSeamTrack } from "./presentationSeamTrack";
+import { PAGED_LAYER, planPresentationLayers, standbyReaderProps, type PagedLayerKey, type PresentationLayer, type PresentationPlan } from "./presentationStack";
 import {
   adoptNavigationNonces,
   beginChapterLoadNonces,
@@ -3804,7 +3805,6 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const seamTurnAnimation = normalizeTurnAnimation(props.settings.turnAnimation);
   const seamTurnPossible = props.settings.preloadNextChapter === true && props.settings.seamlessChapterTurn === true &&
     (seamTurnAnimation === "slide" || seamTurnAnimation === "cover") && !prefersReducedMotion();
-  const seamPossible = seamTurnPossible && seamTurnAnimation === "slide";
   const [classifiedTick, setClassifiedTick] = useState(0);
   const bumpClassified = useCallback(() => setClassifiedTick((tick) => tick + 1), []);
   // A13-2：章边拼接只在普通正文之间；A13 并排组是独立边界（配对从它之后重新开始）。
@@ -3817,8 +3817,8 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
     if (!spreadsShown) return "ordinary";
     return await imageSpreads.resolve(index, signal) === null ? "ordinary" : "isolated";
   }, [spreadsShown, imageSpreads]);
-  // A16 第二阶段：连续滑动 + 双页时，外层同时保留当前显示与相邻显示层（见 presentationStack）。
-  const stackOn = seamPossible && spreadsShown && props.settings.readingMode !== "scroll" && !props.book.fixedLayout;
+  // Keep the paged reader mounted while the initial spread width is measured.
+  const stackOn = seamTurnPossible && requestedSpread && (spreadsShown || width === 0);
   // Keep whichever ordinary layer just landed as the resident reader. A
   // reverse seam must not discard that prepared document and reload another.
   const pagedLayerKey = useRef<PagedLayerKey>(PAGED_LAYER);
@@ -3836,7 +3836,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
     store.counts.set(index, leaves);
     setClassifiedTick((tick) => tick + 1);
   }, []);
-  const runDirection = props.server.mediaCacheBudgetExceeded ? 0 : warmDirection.current;
+  const runDirection = seamTurnAnimation !== "slide" || !spreadsShown || props.server.mediaCacheBudgetExceeded ? 0 : warmDirection.current;
   const frontRun = stackOn && runDirection === 1 ? planFrontRun({
     book: props.book,
     current: pair?.left ?? props.spineIndex,
@@ -3852,6 +3852,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
     ? planPresentationLayers(props.book, props.spineIndex, pair, (index) => imageSpreads.peek(index), {
       key: pagedLayerKey.current,
       warmDirection: runDirection,
+      immediateOnly: seamTurnAnimation === "cover",
       run: frontRun ? { units: frontRun.units, waitingFor: frontRun.waitingFor } : undefined,
       spineIndex: committed.current.book === props.book ? committed.current.layers.get(pagedLayerKey.current) ?? -1 : -1,
     })
@@ -4014,44 +4015,22 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
       warmDirection.current = direction;
       setClassifiedTick((tick) => tick + 1);
     }
-    // A16-3: every prepared screen on this side (and, for a one-screen group, the
-    // other side) joins one track, so further turns during the motion move on
-    // like turns inside a chapter; only the screen it finally stops on is
-    // requested. A paged reader's other side is its own previous page, not a layer.
     const source = trackSource.current;
-    const planned = planSeamTrack(source.book, current, source.pair, latestProps.current.spineIndex,
-      (index) => source.imageSpreads.peek(index),
-      (key, edge) => layerHandles.current.get(key)?.current?.seamReady?.(edge) === true,
-      (key, dir) => layerHandles.current.get(key)?.current?.trackChain?.(dir) ?? null);
-    const mainLayer = current.layers.find((layer) => layer.key === current.mainKey);
-    let screens = planned.screens;
-    let at = planned.current;
-    if (mainLayer?.kind === "paged") {
-      screens = direction === 1 ? screens.slice(at) : screens.slice(0, at + 1);
-      at = direction === 1 ? 0 : at;
-    }
-    // Keep the contiguous run around the current screen whose elements exist.
-    let low = at;
-    let high = at;
-    const elementOf = (screen: (typeof screens)[number]): HTMLElement | undefined =>
-      screen.inner ? screen.inner.element as HTMLElement : layerElements.current.get(screen.key);
-    while (low > 0 && elementOf(screens[low - 1])) low--;
-    while (high < screens.length - 1 && elementOf(screens[high + 1])) high++;
-    screens = screens.slice(low, high + 1);
-    at -= low;
-    if (screens[at + direction]?.key !== targetKey || screens[at + direction]?.spineIndex !== targetIndex) {
-      screens = direction === 1
-        ? [{ key: current.mainKey, spineIndex: latestProps.current.spineIndex, atEnd: false }, { key: targetKey, spineIndex: targetIndex, atEnd: false }]
-        : [{ key: targetKey, spineIndex: targetIndex, atEnd: true }, { key: current.mainKey, spineIndex: latestProps.current.spineIndex, atEnd: false }];
-      at = direction === 1 ? 0 : 1;
-    }
-    const trackElements = screens.map((screen) => elementOf(screen)!);
+    const motion = normalizeTurnAnimation(latestProps.current.settings.turnAnimation) === "cover" ? "cover" : "slide";
+    const { screens, at, elements: trackElements } = presentationSeamTrack({
+      motion, direction, plan: current, book: source.book, pair: source.pair, spineIndex: latestProps.current.spineIndex,
+      targetKey, targetIndex, peek: index => source.imageSpreads.peek(index),
+      ready: (key, edge) => layerHandles.current.get(key)?.current?.seamReady?.(edge) === true,
+      inner: (key, dir) => layerHandles.current.get(key)?.current?.trackChain?.(dir) ?? null,
+      layerElement: key => layerElements.current.get(key),
+    });
     let seam: ChapterSeam | null = null;
     seam = new ChapterSeam({
       direction,
       current: trackElements[at],
       neighbor: trackElements[at + direction],
       track: trackElements,
+      motion,
       width,
       progression: progressionRef.current,
       touch: prefersCoarsePointer(),
@@ -4171,7 +4150,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
         layer.kind === "paged" ? layer.prepareThrough : undefined);
       const node = layer.kind === "paged"
         ? <PagedReaderView {...layerProps} ref={handleRefFor(layer.key)}
-          onChapterLeaves={onChapterLeaves}
+          onChapterLeaves={seamTurnAnimation === "slide" ? onChapterLeaves : undefined}
           onFlowProgression={main ? onFlowProgression : undefined}
           seamTargetEligible={seamTargetEligible}
           chapterFillKind={chapterFillKind}

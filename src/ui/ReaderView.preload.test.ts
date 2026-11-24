@@ -332,7 +332,7 @@ describe("ReaderView preload settings lifecycle", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(20); await Promise.resolve(); });
     }
     expect(classifiedNext(dom.container, 1)).toBe(true);
-    const active = instances[0];
+    const active = instances.find(p => !p.disposed && p.path === "0.xhtml")!;
     await finish(active);
     // The classification and the preload re-trigger are both asynchronous; wait
     // for the neighbour slot to exist before completing it.
