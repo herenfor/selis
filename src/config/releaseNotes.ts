@@ -35,6 +35,37 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.8",
+    status: "released",
+    releasedOn: "2026-11-25",
+    items: [
+      {
+        category: "new",
+        text: "翻页动画新增「覆盖」：当前页滑出、下一页露出，带前缘阴影；支持跟手、中途反悔和反向翻页，章边界、双页模式和并排图片章也保持覆盖动画。默认仍是「滑动」，可在 Aa 面板的「翻页动画」里切换。",
+      },
+      {
+        category: "new",
+        text: "书架可以直接打开 PDF 文件离线阅读，使用统一阅读页脚翻页；PDF 适配标记为实验性，部分版式或扫描页可能显示异常。",
+      },
+      {
+        category: "new",
+        text: "阅读设置新增「书籍联网」和「JavaScript 执行」开关，默认关闭；只对本次开书生效，关书重开复位。",
+      },
+      {
+        category: "improved",
+        text: "带本地整页背景的章节（如目录）先解码背景图再显示，不再出现背景比正文晚到。",
+      },
+      {
+        category: "fixed",
+        text: "多看画廊章节的多图组按图片逐页分页，双页模式按阅读顺序 1-2 / 3-4 配对，图注、链接和作者固定尺寸的图片不再被误转或裁切。",
+      },
+      {
+        category: "fixed",
+        text: "覆盖翻页在章边界、双页模式和并排图片章的首次切换不再退回普通换章或瞬切。",
+      },
+    ],
+  },
+  {
     version: "0.4.7",
     status: "released",
     releasedOn: "2026-11-24",
