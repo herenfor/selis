@@ -18,7 +18,7 @@ async function probe(
     peek: (index: number) => unknown;
     resolve: (index: number) => Promise<unknown>;
   },
-): { eligible: () => boolean } {
+): Promise<{ eligible: () => boolean }> {
   const state = { eligible: () => false };
   function Probe() {
     const [revision, setRevision] = useState(0);
