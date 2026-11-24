@@ -62,7 +62,7 @@
   "display.assist.swatch.magenta": "Magenta",
   "display.assist.section": "Color Vision Assistance",
   "display.assist.title": "Color Vision Assistance",
-  "display.assist.note": "Shifts confusing colors toward more distinguishable hues. Adjusts display only and does not claim to correct vision.",
+  "display.assist.note": "Shifts confusing colors toward more distinguishable hues.",
   "display.assist.kind": "Assistance type",
   "display.assist.strength": "Strength",
   "display.assist.strength.label": "Color vision assistance strength",

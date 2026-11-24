@@ -71,7 +71,7 @@ export const display = defineMessages("display", {
   "display.assist.swatch.magenta": "洋红",
   "display.assist.section": "色弱辅助",
   "display.assist.title": "色弱辅助",
-  "display.assist.note": { zh: "把易混的色差移到更好分辨的颜色方向；只改变显示，不宣称修复视力。", note: "Must not claim to fix eyesight." },
+  "display.assist.note": { zh: "把易混的色差移到更好分辨的颜色方向。", note: "Must not claim to fix eyesight." },
   "display.assist.kind": "辅助类型",
   "display.assist.strength": { zh: "强度", max: 10 },
   "display.assist.strength.label": "色弱辅助强度",
