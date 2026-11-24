@@ -69,6 +69,7 @@ import { installPagedSwipe, PAGED_SWIPE_THRESHOLD_PX } from "../render/pagedSwip
 import { ChapterSeam, type ExternalSeam, type SeamMotion } from "./chapterSeam";
 import { ChapterFillIndex, chapterFillEntries } from "../render/chapterFill";
 import { ChapterPreloadSchedule } from "./chapterPreloadSchedule";
+import { useSeamPreparation } from "./useSeamPreparation";
 import { planFrontRun } from "./frontRunPlan";
 import { canJoinChapters, chapterFillLayoutKey, joinLaneClip, type JoinLeaves } from "./chapterJoin";
 import { PAGED_LAYER, planPresentationLayers, planSeamTrack, standbyReaderProps, type PagedLayerKey, type PresentationLayer, type PresentationPlan } from "./presentationStack";
@@ -3805,9 +3806,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
     (seamTurnAnimation === "slide" || seamTurnAnimation === "cover") && !prefersReducedMotion();
   const seamPossible = seamTurnPossible && seamTurnAnimation === "slide";
   const [classifiedTick, setClassifiedTick] = useState(0);
-  // 分类结果变化时换一个身份：内层据此重排预读，见下方 seamTargetEligible 的 effect。
-  const seamTargetEligible = useCallback((index: number) => !spreadsShown || imageSpreads.peek(index) === null,
-    [spreadsShown, imageSpreads, classifiedTick]);
+  const bumpClassified = useCallback(() => setClassifiedTick((tick) => tick + 1), []);
   // A13-2：章边拼接只在普通正文之间；A13 并排组是独立边界（配对从它之后重新开始）。
   const chapterFillKind = useCallback((index: number): "ordinary" | "isolated" | undefined => {
     if (!spreadsShown) return "ordinary";
@@ -3860,24 +3859,19 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   const lookaheadIndex = plan?.lookaheadIndex ?? -1;
   const parkedIndex = plan?.layers.find((layer) => layer.kind === "paged")?.spineIndex ?? -1;
   const frontRunWaiting = frontRun?.waitingFor ?? -1;
-  useEffect(() => {
-    if (!spreadsShown || !seamTurnPossible) return;
-    // 提前分类相邻显示单元（只读 XHTML），让章边联动知道它们是否会并排；分好后重新规划。
-    const controller = new AbortController();
-    const first = pair?.left ?? props.spineIndex;
-    const last = pair ? pair.right ?? pair.left : props.spineIndex;
-    const wanted = [nextLinearIndex(props.book, last, 1), nextLinearIndex(props.book, first, -1), parkedIndex, lookaheadIndex];
-    // The front-run plan waits for one chapter's classification at a time.
-    if (frontRunWaiting >= 0) wanted.push(frontRunWaiting);
-    for (const index of wanted) {
-      if (index >= 0 && imageSpreads.peek(index) === undefined) {
-        void imageSpreads.resolve(index, controller.signal).then(() => {
-          if (!controller.signal.aborted) setClassifiedTick((tick) => tick + 1);
-        }, () => {});
-      }
-    }
-    return () => controller.abort();
-  }, [imageSpreads, props.book, props.spineIndex, pair, parkedIndex, lookaheadIndex, spreadsShown, seamTurnPossible, classifiedTick, frontRunWaiting]);
+  const seamTargetEligible = useSeamPreparation({
+    book: props.book,
+    spineIndex: props.spineIndex,
+    spreadsShown,
+    seamTurnPossible,
+    imageSpreads,
+    pair,
+    parkedIndex,
+    lookaheadIndex,
+    frontRunWaiting,
+    revision: classifiedTick,
+    onClassified: bumpClassified,
+  });
   const tapGeometry = useMemo(() => createReaderTapGeometry(width, props.tapRegions), [width, props.tapRegions]);
   const bookProgression = effectivePageProgression(props.book.pageProgression, props.settings, props.book.fixedLayout);
   // 点击翻页区按本章实际方向映射（竖排书元数据没写方向时与元数据不同）。
