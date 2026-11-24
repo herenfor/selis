@@ -218,6 +218,21 @@
   opacity: 0.85;
 }
 
+/* 实验性格式（当前为 PDF）的小标签，不抢正文与页码。 */
+.whisper-experimental-badge {
+  flex: none;
+  margin-right: 6px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: var(--r-full);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.whisper-footer.is-hovered .whisper-experimental-badge { color: var(--fg); }
+
 /* ---- 手机/平板触摸底部工具条：与顶栏共享 toolsVisible，覆盖层显隐不重排正文 ---- */
 .whisper-footer.is-mobile {
   bottom: env(safe-area-inset-bottom, 0px);

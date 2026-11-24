@@ -28,6 +28,8 @@ export interface WhisperFooterProps {
   leafRange?: { first: number; last: number; total: number } | null;
 
   chapterTitle?: string;
+  /** Experimental format (currently PDF): show a small badge in the footer. */
+  experimental?: boolean;
   chapterIndex: number;
   totalChapters: number;
   /** Per spine item: linear or not. Labels number linear chapters only; seeking keeps spine indices. */
@@ -184,6 +186,7 @@ export const WhisperFooter: React.FC<WhisperFooterProps> = ({
   leafRange,
   totalScrollProgress,
   chapterTitle,
+  experimental,
   chapterIndex,
   totalChapters,
   linearSpine,
@@ -668,6 +671,11 @@ export const WhisperFooter: React.FC<WhisperFooterProps> = ({
 
         {/* 底部克制平静文本：手机也保留精简阅读位置。 */}
         <div className="whisper-meta-line">
+          {experimental && (
+            <span className="whisper-experimental-badge" title={t("reader.pdf.experimental.hint")}>
+              {t("reader.pdf.experimental")}
+            </span>
+          )}
           <span className="whisper-calm-text" title={chapterTitle || t("footer.progress")}>
             {textContent}
           </span>

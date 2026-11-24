@@ -9,5 +9,7 @@
   "reader.media.retry": "媒體載入失敗，點選重試",
   "reader.media.unavailable": "未找到書內媒體檔案（暫不支援外部媒體連結）",
   "reader.media.unsupported": "目前裝置無法播放此媒體格式",
-  "reader.media.play": "點選播放"
+  "reader.media.play": "點選播放",
+  "reader.pdf.experimental": "PDF 實驗性",
+  "reader.pdf.experimental.hint": "PDF 閱讀為實驗性適配，部分版式或掃描頁可能顯示異常。"
 }

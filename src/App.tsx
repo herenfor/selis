@@ -3332,7 +3332,7 @@ export default function App() {
           readingMode={settings.readingMode === "scroll" ? "scroll" : "paginated"}
           scrollProgress={chapterState.status === "ready" ? chapterState.scrollProgress ?? 0 : 0}
           totalScrollProgress={chapterState.status === "ready" ? chapterState.totalScrollProgress : undefined}
-          chapterTitle={currentChapterLabel || book!.metadata.title}
+          chapterTitle={currentChapterLabel || book!.metadata.title} experimental={book!.sourceFormat === "pdf"}
           chapterIndex={spineIndex}
           totalChapters={book!.spine.length}
           linearSpine={spineLinear}

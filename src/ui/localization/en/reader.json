@@ -9,5 +9,7 @@
   "reader.media.retry": "Media could not be loaded. Tap to retry",
   "reader.media.unavailable": "No embedded media file found (external media links are not supported yet)",
   "reader.media.unsupported": "This device cannot play this media format",
-  "reader.media.play": "Tap to play"
+  "reader.media.play": "Tap to play",
+  "reader.pdf.experimental": "PDF experimental",
+  "reader.pdf.experimental.hint": "PDF reading is experimental; some layouts or scanned pages may render incorrectly."
 }
