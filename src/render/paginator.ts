@@ -33,7 +33,7 @@ import { applySearchHighlight, clearSearchHighlight } from "./searchHighlight";
 import { buildNoteHighlightCss, groupNoteHighlights, LEGACY_NOTE_HIGHLIGHT_NAME, writeNoteHighlightStyle } from "./noteHighlights";
 import type { NoteHighlightGroup } from "./noteHighlights";
 import { createBackdropCompatibilitySession } from "./backdropCompatibility";
-import { mediaFitCssSize, planMediaFit, planTableWidth, resolveAvailableInlineWidth, tableFitCssWidth, tableFitsInlineBounds } from "./contentFit";
+import { clampMinDimensionCss, mediaFitCssSize, planBlockWidthFit, planMediaFit, planTableWidth, resolveAvailableInlineWidth, tableFitCssWidth, tableFitsInlineBounds } from "./contentFit";
 import type { InlineContentBounds } from "./contentFit";
 import { resolveSearchTarget, type SearchTargetRequest } from "./searchTarget";
 import { adaptNavigationAnchor } from "./navigationAnchor";
@@ -291,9 +291,10 @@ export class ChapterPaginator {
     maxWidth?: InlineStyleValue;
   }> = [];
   /**
-   * 正文图片（及其纯包裹盒）/顶层背景图盒的叶内适配快照：原 inline 值与优先级。
+   * 正文块盒/图片（及其纯包裹盒）/顶层背景图盒的叶内适配快照：原 inline 值与优先级。
    * 每轮先恢复再量作者布局，不把上轮补丁当作者尺寸，字号往返不会越缩越小。
    */
+  private containedBlockFixes: ContentFitFix[] = [];
   private containedMediaFixes: ContentFitFix[] = [];
   /** 普通表格（及其纯包裹盒）收窄快照；规则同上。 */
   private containedTableFixes: ContentFitFix[] = [];
@@ -1971,6 +1972,7 @@ export class ChapterPaginator {
     this.restoreInlineBoxFixes();
     this.restoreFloatLayoutFixes();
     this.restoreBookMargins();
+    this.restoreContainedBlockFixes();
     this.restoreContainedMediaFixes();
     this.restoreContainedTableFixes();
     this.restoreFitContentFix();
@@ -2960,6 +2962,11 @@ export class ChapterPaginator {
     }).scrollTop;
   }
 
+  private restoreContainedBlockFixes(): void {
+    restoreContentFitStyles(this.containedBlockFixes ?? []);
+    this.containedBlockFixes = [];
+  }
+
   private restoreContainedMediaFixes(): void {
     restoreContentFitStyles(this.containedMediaFixes ?? []);
     this.containedMediaFixes = [];
@@ -2968,6 +2975,22 @@ export class ChapterPaginator {
   private restoreContainedTableFixes(): void {
     restoreContentFitStyles(this.containedTableFixes ?? []);
     this.containedTableFixes = [];
+  }
+
+  /**
+   * End-aligned floats (e.g. `float: right` in LTR) overflow past the start
+   * edge of their column, so anchoring at `fragment.left` can look up the
+   * previous column; anchor at the trailing edge inside the intended leaf.
+   */
+  private leafAnchorFragment(fragment: InlineContentBounds, floatValue: string): InlineContentBounds {
+    if (!this.scrollMode && this.effectiveColumnWidth > 0 && fragment.right - fragment.left > this.effectiveColumnWidth) {
+      const float = floatValue.trim().toLowerCase();
+      const endAlignedFloat = this.flowProgression === "rtl" ? float === "left" : float === "right";
+      if (endAlignedFloat) {
+        return { left: fragment.right - 0.5, right: fragment.right };
+      }
+    }
+    return fragment;
   }
 
   /**
@@ -3038,8 +3061,8 @@ export class ChapterPaginator {
     }
     const cs = win.getComputedStyle(el);
     const margins = readComputedHorizontalMarginSpecifiedValues(el);
-    const marginLeft = margins?.left === "auto" ? 0 : parseFloat(cs.marginLeft) || 0;
-    const marginRight = margins?.right === "auto" ? 0 : parseFloat(cs.marginRight) || 0;
+    const marginLeft = margins?.left === "auto" ? 0 : Math.max(0, parseFloat(cs.marginLeft) || 0);
+    const marginRight = margins?.right === "auto" ? 0 : Math.max(0, parseFloat(cs.marginRight) || 0);
     return resolveAvailableInlineWidth(leaf, boxes, marginLeft + marginRight);
   }
 
@@ -3088,7 +3111,10 @@ export class ChapterPaginator {
       const cs = win.getComputedStyle(wrapper);
       const paddingBorder = horizontalPaddingBorder(cs);
       const value = cs.boxSizing === "border-box" ? budget : Math.max(0, budget - paddingBorder);
-      writes.push({ el: wrapper, properties: [["max-width", value]] });
+      const properties: Array<[string, number | string]> = [["max-width", value]];
+      const minWidth = clampMinDimensionCss(cs.minWidth ?? "", value, "cap");
+      if (minWidth !== null) properties.push(["min-width", minWidth]);
+      writes.push({ el: wrapper, properties });
     }
   }
 
@@ -3101,14 +3127,113 @@ export class ChapterPaginator {
   }
 
   /**
-   * 叶内内容适配的唯一入口：表格与媒体互相影响宽度，先一起还原上一轮写入，
-   * 再按依赖顺序处理——表格宽度定下来以后才量表内图片。
+   * 叶内内容适配的唯一入口：块容器、表格与媒体互相影响宽度，先一起还原上一轮写入，
+   * 再按依赖顺序处理——先约束超宽块容器，再处理表格，最后量表内与正文图片。
    */
   private applyContainedContentFit(): void {
+    this.restoreContainedBlockFixes();
     this.restoreContainedMediaFixes();
     this.restoreContainedTableFixes();
+    this.applyContainedBlockWidth();
     const unresolvedTables = this.applyContainedTableWidth();
     this.applyContainedMediaMaxWidth(unresolvedTables);
+  }
+
+  /**
+   * 约束超出当前叶可用宽的普通流块容器（如设定了 width 与 min-width 的装饰盒/目录盒）。
+   * 自顶向下分波处理：外盒收窄后跳过其子树，让内部 auto-width 子元素自然折行，
+   * 下一波再处理自身仍声明了固定超宽或 min-width 的嵌套块。
+   */
+  private applyContainedBlockWidth(): void {
+    const doc = this.contentDoc;
+    const viewer = this.viewer;
+    const win = doc?.defaultView;
+    if (!doc || !viewer || !win || this.fixedLayout) return;
+    if (
+      viewer.classList.contains("fullpage-image") ||
+      viewer.classList.contains("pure-image-page")
+    ) {
+      return;
+    }
+
+    const skipSubtreeTags = new Set(["table", "img", "svg", "video", "audio", "canvas", "ruby", "math"]);
+    const blockDisplays = /^(?:block|flow-root|flex|grid|list-item|inline-block|inline-flex|inline-grid)$/u;
+    const fullpageClassRe = /(?:^|\s)(?:illus|kuchie|cover|duokan-image-fullscreen)(?:\s|$)/u;
+    const fixed = new Set<HTMLElement>();
+    const allFixes: ContentFitFix[] = [];
+
+    for (let wave = 0; wave < 4; wave++) {
+      const writes: ContentFitWrite[] = [];
+      const walk = (parent: Element): void => {
+        for (const child of Array.from(parent.children ?? [])) {
+          const el = child as HTMLElement;
+          if (skipSubtreeTags.has(el.localName)) continue;
+          if (
+            el.hasAttribute?.("data-reader") ||
+            el.hasAttribute?.("data-reader-image-group") ||
+            el.hasAttribute?.("data-reader-image-page")
+          ) {
+            continue;
+          }
+          if (typeof el.className === "string" && fullpageClassRe.test(el.className)) continue;
+          const cs = win.getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden") continue;
+          if (cs.writingMode !== "horizontal-tb") continue;
+          if (/^(?:absolute|fixed)$/u.test(cs.position.trim().toLowerCase())) continue;
+          if (cs.transform.trim().toLowerCase() !== "none") continue;
+
+          if (!fixed.has(el) && blockDisplays.test(cs.display.trim().toLowerCase())) {
+            const startMargin = cs.direction.trim().toLowerCase() === "rtl" ? cs.marginRight : cs.marginLeft;
+            if ((parseFloat(startMargin) || 0) >= -0.5) {
+              const borderBoxW = getBorderBoxWidth(cs);
+              if (borderBoxW > 0.5) {
+                let fastSkip = false;
+                if (el.parentElement === viewer && !this.scrollMode && this.effectiveColumnWidth > 0) {
+                  const margins = readComputedHorizontalMarginSpecifiedValues(el);
+                  const ml = margins?.left === "auto" ? 0 : Math.max(0, parseFloat(cs.marginLeft) || 0);
+                  const mr = margins?.right === "auto" ? 0 : Math.max(0, parseFloat(cs.marginRight) || 0);
+                  if (borderBoxW + ml + mr <= this.effectiveColumnWidth + 0.5) {
+                    fastSkip = true;
+                  }
+                }
+                if (!fastSkip) {
+                  const rects = Array.from(el.getClientRects()).filter((rect) => rect.width > 0);
+                  if (rects.length > 0) {
+                    const leaf = this.contentLeafFor(this.leafAnchorFragment(this.axisClientRect(rects[0]), cs.float));
+                    if (leaf) {
+                      const budget = this.inlineBudgetFor(el, leaf, win);
+                      const plan = planBlockWidthFit({
+                        authoredBorderBoxWidth: borderBoxW,
+                        availableBorderBoxWidth: budget,
+                        paddingBorderWidth: horizontalPaddingBorder(cs),
+                        boxSizing: cs.boxSizing === "border-box" ? "border-box" : "content-box",
+                        computedMinWidth: cs.minWidth ?? "",
+                      });
+                      if (plan && !hasAuthorMediaBreakoutIntent(doc, el)) {
+                        const properties: Array<[string, number | string]> = [["max-width", plan.maxWidth]];
+                        if (plan.minWidth !== undefined) {
+                          properties.push(["min-width", plan.minWidth]);
+                        }
+                        writes.push({ el, properties });
+                        fixed.add(el);
+                        continue;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          walk(el);
+        }
+      };
+      walk(viewer);
+      if (writes.length === 0) break;
+      allFixes.push(...writeContentFitStyles(writes));
+      void viewer.offsetWidth;
+    }
+
+    this.containedBlockFixes = allFixes;
   }
 
   /**
@@ -3177,12 +3302,25 @@ export class ChapterPaginator {
         });
         if (plan && plan.scale < 1 - 1e-3) {
           const css = mediaFitCssSize(plan, { width: paddingBorder, height: paddingBorderHeight }, boxSizing);
-          elementWrites.push({ el: element, properties: [["max-width", css.width], ["max-height", css.height]] });
+          const properties: Array<[string, number | string]> = [
+            ["max-width", css.width],
+            ["max-height", css.height],
+          ];
+          if (clampMinDimensionCss(cs.minWidth ?? "", css.width, "zero") !== null) {
+            properties.push(["min-width", 0]);
+          }
+          if (clampMinDimensionCss(cs.minHeight ?? "", css.height, "zero") !== null) {
+            properties.push(["min-height", 0]);
+          }
+          elementWrites.push({ el: element, properties });
         }
         this.planWrapperWrites(element, leaf, win, doc, elementWrites);
       } else if (fragment.right - fragment.left > budget + epsilon) {
         const value = boxSizing === "border-box" ? budget : Math.max(0, budget - paddingBorder);
-        elementWrites.push({ el: element, properties: [["max-width", value]] });
+        const properties: Array<[string, number | string]> = [["max-width", value]];
+        const minWidth = clampMinDimensionCss(cs.minWidth ?? "", value, "cap");
+        if (minWidth !== null) properties.push(["min-width", minWidth]);
+        elementWrites.push({ el: element, properties });
       }
       if (elementWrites.length === 0) continue;
       // 先筛实际溢出，再读取作者 CSSOM，普通图片不增加规则扫描。
@@ -3220,22 +3358,23 @@ export class ChapterPaginator {
       if (table.closest(".illus, .kuchie, .cover, .duokan-image-fullscreen")) continue;
       const cs = win.getComputedStyle(table);
       if (!/^(?:table|inline-table)$/u.test(cs.display.trim().toLowerCase())) continue;
-      if (cs.float.trim().toLowerCase() !== "none") continue;
       if (/^(?:absolute|fixed)$/u.test(cs.position.trim().toLowerCase())) continue;
       if (cs.transform.trim().toLowerCase() !== "none" || cs.writingMode !== "horizontal-tb") continue;
       const rects = Array.from(table.getClientRects()).filter((rect) => rect.width > 0);
       if (rects.length === 0) continue;
-      const leaf = this.contentLeafFor(this.axisClientRect(rects[0]));
+      const leaf = this.contentLeafFor(this.leafAnchorFragment(this.axisClientRect(rects[0]), cs.float));
       if (!leaf) continue;
       const budget = this.inlineBudgetFor(table, leaf, win);
       const plan = planTableWidth(rects[0].width, budget);
       const writes: ContentFitWrite[] = [];
       if (plan.kind === "constrain") {
         const boxSizing: BoxSizing = cs.boxSizing === "border-box" ? "border-box" : "content-box";
-        writes.push({
-          el: table,
-          properties: [["width", tableFitCssWidth(plan.borderBoxWidth, horizontalPaddingBorder(cs), boxSizing)]],
-        });
+        const cssWidth = tableFitCssWidth(plan.borderBoxWidth, horizontalPaddingBorder(cs), boxSizing);
+        const properties: Array<[string, number | string]> = [["width", cssWidth]];
+        if (clampMinDimensionCss(cs.minWidth ?? "", cssWidth, "zero") !== null) {
+          properties.push(["min-width", 0]);
+        }
+        writes.push({ el: table, properties });
       }
       this.planWrapperWrites(table, leaf, win, doc, writes);
       if (writes.length > 0) planned.push({ table, writes });
@@ -3815,7 +3954,7 @@ export class ChapterPaginator {
           el.style.setProperty("margin-left", `${desiredLeft}px`, "important");
           el.style.setProperty(
             "margin-right",
-            `${parentW - desiredLeft - width}px`,
+            `${Math.max(0, parentW - desiredLeft - width)}px`,
             "important"
           );
           continue;
@@ -7644,6 +7783,7 @@ export class ChapterPaginator {
     this.selectionContextMenuHandler?.(null);
     this.restoreInlineBoxFixes();
     this.restoreFloatLayoutFixes();
+    this.restoreContainedBlockFixes();
     this.restoreContainedMediaFixes();
     this.restoreContainedTableFixes();
     this.trailingFloatSession.restore();
