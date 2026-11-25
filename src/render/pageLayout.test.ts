@@ -91,8 +91,10 @@ describe("computePagedGeometry", () => {
   });
 
   it("falls back to one column below the minimum column width", () => {
-    expect(computePagedGeometry(583, 24, 2)).toEqual({ columns: 1, columnWidth: 583, columnStep: 607, viewStep: 607 });
-    expect(computePagedGeometry(584, 24, 2).columns).toBe(2);
+    expect(computePagedGeometry(663, 24, 2)).toEqual({ columns: 1, columnWidth: 663, columnStep: 687, viewStep: 687 });
+    expect(computePagedGeometry(664, 24, 2)).toEqual({ columns: 2, columnWidth: 320, columnStep: 344, viewStep: 688 });
+    expect(computePagedGeometry(614, 24, 2).columns).toBe(1);
+    expect(computePagedGeometry(700, 24, 2).columns).toBe(2);
   });
 
   it("handles a zero gap without changing the formulas", () => {

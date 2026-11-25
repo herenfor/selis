@@ -3760,6 +3760,12 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   } | null>(null);
   const requestedSpread = props.settings.readingMode !== "scroll" &&
     props.settings.columnsPerView === 2 && !props.book.fixedLayout;
+  // 版式身份变了（窗口高宽、字号、行距、页边距、字体……）：退回过单章的组下次进入时重新确认。
+  // 只换主题颜色不影响排版，不算。
+  const [height, setHeight] = useState(0);
+  const { theme: _theme, ...layoutSettings } = props.settings;
+  const layoutIdentity = `${width}x${height}|${JSON.stringify(layoutSettings)}`;
+  const previousImageLayout = useRef(layoutIdentity);
   useEffect(() => {
     const element = host.current;
     if (!element) return;
@@ -3774,6 +3780,11 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
   }, []);
   useEffect(() => {
     if (!requestedSpread) return;
+    if (previousImageLayout.current !== layoutIdentity) {
+      imageSpreads.retryRejected();
+      previousImageLayout.current = layoutIdentity;
+      setImagePlan(null);
+    }
     const controller = new AbortController();
     void imageSpreads.resolve(props.spineIndex, controller.signal).then((spread) => {
       if (!controller.signal.aborted) setImagePlan({ resolver: imageSpreads, index: props.spineIndex, spread });
@@ -3783,15 +3794,7 @@ export const ReaderView = forwardRef<ReaderHandle, ReaderViewProps>(function Rea
       if (!controller.signal.aborted) setImagePlan({ resolver: imageSpreads, index: props.spineIndex, spread: null });
     });
     return () => controller.abort();
-  }, [imageSpreads, props.spineIndex, props.anchorNonce, requestedSpread]);
-  // 版式身份变了（窗口高宽、字号、行距、页边距、字体……）：退回过单章的组下次进入时重新确认。
-  // 只换主题颜色不影响排版，不算。
-  const [height, setHeight] = useState(0);
-  const { theme: _theme, ...layoutSettings } = props.settings;
-  const layoutIdentity = `${width}x${height}|${JSON.stringify(layoutSettings)}`;
-  useEffect(() => {
-    imageSpreads.retryRejected();
-  }, [imageSpreads, layoutIdentity]);
+  }, [imageSpreads, props.spineIndex, props.anchorNonce, requestedSpread, layoutIdentity]);
   const imageGeometry = createSpreadGeometry(Math.max(0, width -
     (props.settings.pageMarginsPx?.left ?? 0) - (props.settings.pageMarginsPx?.right ?? 0)), props.settings.gapPx, 2);
   const planned = imageSpreads.peek(props.spineIndex) ?? (imagePlan?.resolver === imageSpreads &&

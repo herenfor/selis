@@ -57,7 +57,7 @@ export interface PagedGeometry {
 }
 
 /** 有效双栏所需的最小单列宽（CSS px）。 */
-export const MIN_COLUMN_WIDTH_PX = 280;
+export const MIN_COLUMN_WIDTH_PX = 320;
 /** 四边距设置上限（CSS px）。 */
 export const PAGE_MARGIN_MAX_PX = 160;
 /** 列间距设置上限（CSS px）。 */

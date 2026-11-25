@@ -39,7 +39,7 @@ export function createSpreadGeometry(
   viewportWidth: number,
   gap: number,
   requestedColumns: 1 | 2,
-  minimumColumnWidth = 280,
+  minimumColumnWidth = 320,
 ): SpreadGeometry {
   const columns = requestedColumns === 2 && (viewportWidth - gap) / 2 >= minimumColumnWidth ? 2 : 1;
   const columnWidth = (viewportWidth - (columns - 1) * gap) / columns;
