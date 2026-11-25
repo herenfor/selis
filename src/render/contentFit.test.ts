@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampMinDimensionCss,
   mediaFitCssSize,
+  planBlockWidthFit,
   planMediaFit,
   planTableWidth,
   resolveAvailableInlineWidth,
@@ -71,5 +73,31 @@ describe("page content fitting", () => {
     // The table box fits, but a fixed-width/no-wrap cell still spills out.
     expect(tableFitsInlineBounds(available, [available, { left: 136, right: 500 }])).toBe(false);
     expect(tableFitsInlineBounds(available, [])).toBe(false);
+  });
+
+  it("clamps min-width/min-height only when exceeding limit or intrinsic", () => {
+    expect(clampMinDimensionCss("0px", 294, "cap")).toBeNull();
+    expect(clampMinDimensionCss("auto", 294, "zero")).toBeNull();
+    expect(clampMinDimensionCss("none", 294, "cap")).toBeNull();
+    expect(clampMinDimensionCss("294px", 294, "cap")).toBeNull();
+    expect(clampMinDimensionCss("384px", 294, "cap")).toBe(294);
+    expect(clampMinDimensionCss("384px", 294, "zero")).toBe(0);
+    expect(clampMinDimensionCss("min-content", 294, "cap")).toBe(0);
+    expect(clampMinDimensionCss("fit-content", 294, "zero")).toBe(0);
+  });
+
+  it("plans block max-width and min-width clamping respecting box-sizing", () => {
+    expect(planBlockWidthFit({
+      authoredBorderBoxWidth: 294, availableBorderBoxWidth: 294,
+      paddingBorderWidth: 0, boxSizing: "content-box", computedMinWidth: "384px",
+    })).toBeNull();
+    expect(planBlockWidthFit({
+      authoredBorderBoxWidth: 384, availableBorderBoxWidth: 294,
+      paddingBorderWidth: 16, boxSizing: "content-box", computedMinWidth: "384px",
+    })).toEqual({ maxWidth: 278, minWidth: 278 });
+    expect(planBlockWidthFit({
+      authoredBorderBoxWidth: 384, availableBorderBoxWidth: 294,
+      paddingBorderWidth: 16, boxSizing: "border-box", computedMinWidth: "200px",
+    })).toEqual({ maxWidth: 294 });
   });
 });

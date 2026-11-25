@@ -3216,6 +3216,207 @@ describe("contained table fit", () => {
     stuck.call("applyContainedContentFit");
     expect(stuck.media).toHaveBeenLastCalledWith(new Set([stuck.table]));
   });
+
+  it("clamps table min-width to 0 when constraining and restores both if incompressible", () => {
+    const t = setup("width");
+    const doc = t.context.contentDoc as Document;
+    const origGet = doc.defaultView!.getComputedStyle;
+    doc.defaultView!.getComputedStyle = ((el: Element) => ({
+      ...(origGet as (el: Element) => CSSStyleDeclaration)(el),
+      minWidth: "576px",
+    })) as unknown as typeof origGet;
+    const unresolved = t.call<Set<HTMLTableElement>>("applyContainedTableWidth");
+    expect(unresolved.size).toBe(0);
+    expect(t.inline.get("width")).toEqual({ value: "318px", priority: "important" });
+    expect(t.inline.get("min-width")).toEqual({ value: "0px", priority: "important" });
+
+    const stuck = setup("never", { "min-width": { value: "18em", priority: "" } });
+    const stuckDoc = stuck.context.contentDoc as Document;
+    const stuckOrigGet = stuckDoc.defaultView!.getComputedStyle;
+    stuckDoc.defaultView!.getComputedStyle = ((el: Element) => ({
+      ...(stuckOrigGet as (el: Element) => CSSStyleDeclaration)(el),
+      minWidth: "576px",
+    })) as unknown as typeof stuckOrigGet;
+    const stuckUnresolved = stuck.call<Set<HTMLTableElement>>("applyContainedTableWidth");
+    expect([...stuckUnresolved]).toEqual([stuck.table]);
+    expect(stuck.inline.get("min-width")).toEqual({ value: "18em", priority: "" });
+  });
+
+  it("constrains an overflowing float:right table anchored to its trailing edge", () => {
+    const t = setup("width");
+    const doc = t.context.contentDoc as Document;
+    const origGet = doc.defaultView!.getComputedStyle;
+    doc.defaultView!.getComputedStyle = ((el: Element) => ({
+      ...(origGet as (el: Element) => CSSStyleDeclaration)(el),
+      float: "right",
+      minWidth: "576px",
+    })) as unknown as typeof origGet;
+    const contentLeafFor = vi.fn(() => ({ left: 0, right: 318 }));
+    Object.defineProperty(t.context, "effectiveColumnWidth", { value: 318, writable: true, configurable: true });
+    Object.assign(t.context, { flowProgression: "ltr", contentLeafFor });
+    (t.table as unknown as { getClientRects: () => unknown[] }).getClientRects = () => [
+      { left: -258, right: 318, width: 576 },
+    ];
+    t.call("applyContainedTableWidth");
+    expect(contentLeafFor).toHaveBeenCalledWith({ left: 317.5, right: 318 });
+    expect(t.inline.get("width")).toEqual({ value: "318px", priority: "important" });
+    expect(t.inline.get("min-width")).toEqual({ value: "0px", priority: "important" });
+  });
+});
+
+describe("contained block and media min-width clamping", () => {
+  it("clamps wide blocks with min-width in waves, skips ineligible subtrees, and restores", () => {
+    const { document } = parseHTML(`
+      <html><body>
+        <epub-viewer id="epub-viewer">
+          <div id="toc" class="tocbox reader-top"><div id="nested"><p id="auto">Text</p></div></div>
+          <div id="abs">Abs</div>
+          <div id="tx">Tx</div>
+          <div id="fp" class="illus">Illus</div>
+          <div id="bleed">Bleed</div>
+          <table><tbody><tr><td><div id="in-table">Cell</div></td></tr></tbody></table>
+        </epub-viewer>
+      </body></html>
+    `);
+    const viewer = document.getElementById("epub-viewer")!;
+    const toc = document.getElementById("toc")!;
+    const nested = document.getElementById("nested")!;
+    const auto = document.getElementById("auto")!;
+    const abs = document.getElementById("abs")!;
+    const tx = document.getElementById("tx")!;
+    const fp = document.getElementById("fp")!;
+    const bleed = document.getElementById("bleed")!;
+    const inTable = document.getElementById("in-table")!;
+    toc.setAttribute("style", "min-width: 12em;");
+
+    const stylesMap = new WeakMap<Element, Record<string, string>>();
+    const baseStyle = {
+      display: "block", visibility: "visible", writingMode: "horizontal-tb",
+      position: "static", transform: "none", float: "none", direction: "ltr",
+      boxSizing: "content-box", paddingLeft: "0px", paddingRight: "0px",
+      borderLeftWidth: "0px", borderRightWidth: "0px", marginLeft: "0px", marginRight: "0px",
+      width: "294px", minWidth: "0px",
+    };
+    stylesMap.set(toc, { ...baseStyle, width: "384px", minWidth: "384px", paddingLeft: "10px", paddingRight: "10px" });
+    stylesMap.set(nested, { ...baseStyle, width: "350px", minWidth: "350px" });
+    stylesMap.set(auto, { ...baseStyle, width: "294px" });
+    stylesMap.set(abs, { ...baseStyle, position: "absolute", width: "500px" });
+    stylesMap.set(tx, { ...baseStyle, transform: "scale(1.1)", width: "500px" });
+    stylesMap.set(fp, { ...baseStyle, width: "500px" });
+    stylesMap.set(bleed, { ...baseStyle, width: "500px", marginLeft: "-20px" });
+    stylesMap.set(inTable, { ...baseStyle, width: "500px" });
+
+    // First wave sees toc unconstrained (width 384 + 20 = 404); second wave sees toc constrained
+    // to 294 so nested (350) now gets constrained in wave 2 while auto stays untouched.
+    const widthOf = (el: Element): number => {
+      const s = (el as HTMLElement).style;
+      if (s?.getPropertyValue("max-width")) return 294;
+      const cs = stylesMap.get(el);
+      return cs ? parseFloat(cs.width) + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 294;
+    };
+    for (const el of [toc, nested, auto, abs, tx, fp, bleed, inTable]) {
+      const inlineStyle = el.style;
+      Object.defineProperty(el, "style", {
+        value: new Proxy(inlineStyle, {
+          get(target, property) {
+            if (property === "getPropertyPriority") return () => "";
+            const value = Reflect.get(target, property);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        }),
+      });
+      Object.defineProperty(el, "getClientRects", {
+        value: () => [{ left: 0, right: widthOf(el), width: widthOf(el), height: 40 }],
+      });
+    }
+    const win = {
+      getComputedStyle: (el: Element) => {
+        const s = (el as HTMLElement).style;
+        const base = stylesMap.get(el) ?? baseStyle;
+        const inlineMin = s?.getPropertyValue("min-width") ?? "";
+        const tocConstrained = el === auto && Boolean(toc.style.getPropertyValue("max-width"));
+        return {
+          ...base,
+          width: s?.getPropertyValue("max-width") || tocConstrained ? "274px" : base.width,
+          minWidth: inlineMin.endsWith("px") ? inlineMin : base.minWidth,
+        };
+      },
+    };
+    const doc = { styleSheets: [], defaultView: win } as unknown as Document;
+    const context = Object.create(ChapterPaginator.prototype) as Record<string, unknown>;
+    Object.defineProperty(context, "scrollMode", { value: false, writable: true, configurable: true });
+    Object.defineProperty(context, "effectiveColumnWidth", { value: 294, writable: true, configurable: true });
+    Object.assign(context, {
+      contentDoc: doc,
+      viewer,
+      fixedLayout: false,
+      flowProgression: "ltr",
+      containedBlockFixes: [],
+      axisClientRect: (r: { left: number; right: number }) => r,
+      contentLeafFor: () => ({ left: 0, right: 294 }),
+    });
+
+    (ChapterPaginator.prototype as unknown as { applyContainedBlockWidth(): void }).applyContainedBlockWidth.call(context);
+    expect(toc.style.getPropertyValue("max-width")).toBe("274px");
+    expect(toc.style.getPropertyValue("min-width")).toBe("274px");
+    expect(nested.style.getPropertyValue("max-width")).toBe("274px");
+    expect(nested.style.getPropertyValue("min-width")).toBe("274px");
+    for (const untouched of [auto, abs, tx, fp, bleed, inTable]) {
+      expect(untouched.style.getPropertyValue("max-width")).toBe("");
+    }
+
+    (ChapterPaginator.prototype as unknown as { restoreContainedBlockFixes(): void }).restoreContainedBlockFixes.call(context);
+    expect(toc.style.getPropertyValue("max-width")).toBe("");
+    expect(toc.style.getPropertyValue("min-width")).toBe("12em");
+    expect(nested.style.getPropertyValue("max-width")).toBe("");
+    expect(nested.style.getPropertyValue("min-width")).toBe("");
+  });
+
+  it("clamps img min-width and min-height when scaling down an overflowing image", () => {
+    const values = new Map<string, string>();
+    const imgStyle = {
+      getPropertyValue: (p: string) => values.get(p) ?? "",
+      getPropertyPriority: () => "",
+      setProperty: (p: string, v: string) => { values.set(p, v); },
+      removeProperty: (p: string) => { values.delete(p); return ""; },
+    } as unknown as CSSStyleDeclaration;
+    const img = {
+      nodeType: 1, tagName: "IMG", localName: "img", isConnected: true,
+      parentElement: null as unknown as HTMLElement, style: imgStyle, closest: () => null,
+      getClientRects: () => [{ left: 0, right: 384, width: 384, height: 192 }],
+    } as unknown as HTMLImageElement;
+    const viewer = {
+      clientWidth: 360, clientHeight: 800,
+      classList: { contains: () => false },
+      querySelectorAll: () => [img],
+    } as unknown as HTMLElement;
+    (img as unknown as { parentElement: HTMLElement }).parentElement = viewer;
+    const imgCs = {
+      display: "inline", backgroundImage: "none", writingMode: "horizontal-tb", visibility: "visible",
+      float: "none", position: "static", transform: "none", boxSizing: "content-box",
+      width: "384px", minWidth: "384px", minHeight: "192px", maxWidth: "none",
+      paddingLeft: "0px", paddingRight: "0px", paddingTop: "0px", paddingBottom: "0px",
+      borderLeftWidth: "0px", borderRightWidth: "0px", borderTopWidth: "0px", borderBottomWidth: "0px",
+      marginLeft: "0px", marginRight: "0px",
+    } as unknown as CSSStyleDeclaration;
+    const viewerCs = { paddingLeft: "33px", paddingRight: "33px", paddingTop: "32px", paddingBottom: "32px" } as unknown as CSSStyleDeclaration;
+    const context = Object.create(ChapterPaginator.prototype) as Record<string, unknown>;
+    Object.defineProperty(context, "scrollMode", { value: false, writable: true, configurable: true });
+    Object.assign(context, {
+      contentDoc: { styleSheets: [], defaultView: { getComputedStyle: (el: Element) => (el === img ? imgCs : viewerCs) } },
+      viewer, fixedLayout: false, containedMediaFixes: [],
+      contentLeafFor: () => ({ left: 33, right: 327 }),
+    });
+
+    (ChapterPaginator.prototype as unknown as { applyContainedMediaMaxWidth(): void }).applyContainedMediaMaxWidth.call(context);
+    expect(values.get("max-width")).toBe("294px");
+    expect(values.get("max-height")).toBe("147px");
+    expect(values.get("min-width")).toBe("0px");
+    expect(values.get("min-height")).toBe("0px");
+
+    (ChapterPaginator.prototype as unknown as { restoreContainedMediaFixes(): void }).restoreContainedMediaFixes.call(context);
+    expect(values.size).toBe(0);
+  });
 });
 
 describe("createAutoMarginBatch", () => {

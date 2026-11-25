@@ -119,3 +119,64 @@ export function tableFitsInlineBounds(
     fragments.every(box => box.right >= box.left &&
       box.left >= available.left - 0.5 && box.right <= available.right + 0.5);
 }
+
+/**
+ * Clamp an authored `min-width` / `min-height` that exceeds `cssLimit`, since
+ * CSS sizing gives `min-*` precedence over both `width` and `max-width`.
+ * Intrinsic keywords (`min-content`, `max-content`, `fit-content`) resolve to
+ * `0` so the constrained limit can take effect.
+ */
+export function clampMinDimensionCss(
+  computedMin: string,
+  cssLimit: number,
+  mode: "cap" | "zero",
+): number | null {
+  if (!Number.isFinite(cssLimit) || cssLimit < 0) return null;
+  const raw = computedMin.trim().toLowerCase();
+  if (!raw || raw === "0px" || raw === "auto" || raw === "none") return null;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed)) return 0;
+  if (parsed > cssLimit + 0.5) return mode === "zero" ? 0 : Math.max(0, cssLimit);
+  return null;
+}
+
+export interface BlockWidthFitPlan {
+  readonly maxWidth: number;
+  readonly minWidth?: number;
+}
+
+/**
+ * Plan `max-width` (and `min-width` clamp when needed) for an overflowing flow
+ * block so it wraps within its leaf budget without altering font size.
+ */
+export function planBlockWidthFit(input: {
+  authoredBorderBoxWidth: number;
+  availableBorderBoxWidth: number;
+  paddingBorderWidth: number;
+  boxSizing: "content-box" | "border-box";
+  computedMinWidth: string;
+}): BlockWidthFitPlan | null {
+  const {
+    authoredBorderBoxWidth,
+    availableBorderBoxWidth,
+    paddingBorderWidth,
+    boxSizing,
+    computedMinWidth,
+  } = input;
+  if (
+    !Number.isFinite(authoredBorderBoxWidth) ||
+    !Number.isFinite(availableBorderBoxWidth) ||
+    !Number.isFinite(paddingBorderWidth) ||
+    authoredBorderBoxWidth <= 0 ||
+    availableBorderBoxWidth <= 0 ||
+    authoredBorderBoxWidth <= availableBorderBoxWidth + 0.5
+  ) {
+    return null;
+  }
+  const maxWidth =
+    boxSizing === "border-box"
+      ? availableBorderBoxWidth
+      : Math.max(0, availableBorderBoxWidth - Math.max(0, paddingBorderWidth));
+  const minWidth = clampMinDimensionCss(computedMinWidth, maxWidth, "cap");
+  return minWidth === null ? { maxWidth } : { maxWidth, minWidth };
+}
