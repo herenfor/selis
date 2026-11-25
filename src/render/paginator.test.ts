@@ -2253,6 +2253,250 @@ describe("content reflow during the opening restore", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(recompute).not.toHaveBeenCalled();
   }));
+
+  it("runs content reflow once when the retained compositor window is idle instead of looping forever", withTimers(async () => {
+    const { context, recompute, schedule } = contentReflowContext();
+    context.displayReadySeq = 1;
+    context.pageMotion = {
+      driver: { active: true },
+      session: { state: { kind: "idle", page: 0 } },
+    };
+    schedule();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(recompute).toHaveBeenCalledWith(false, 1);
+  }));
+});
+
+describe("viewport reflow under retained motion window and overlapping resizes", () => {
+  function withFakeWindowTimers(run: () => Promise<void>) {
+    return async () => {
+      vi.useFakeTimers();
+      vi.stubGlobal("window", {
+        setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+        clearTimeout: (id: number) => clearTimeout(id),
+      });
+      try {
+        await run();
+      } finally {
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+      }
+    };
+  }
+
+  it("reflows immediately to measure(loadSeq) when the retained motion window is idle", async () => {
+    const measure = vi.fn(async () => true);
+    const rebuildTextIndexForCurrentDoc = vi.fn();
+    const recompute = vi.fn(async () => true);
+    const context = Object.create(ChapterPaginator.prototype) as Record<string, any>;
+    Object.assign(context, {
+      disposed: false,
+      verticalMode: null,
+      loadSeq: 2,
+      displayReadySeq: 2,
+      deferredReflowLoadSeq: -1,
+      deferredViewportReflowLoadSeq: -1,
+      reflowSeq: 0,
+      iframe: { clientWidth: 1120, clientHeight: 862 },
+      measuredViewport: { width: 1440, height: 900 },
+      measuringViewport: null,
+      reflowMeasureController: null,
+      pageMotion: {
+        driver: { active: true },
+        session: { state: { kind: "idle", page: 1 } },
+      },
+      nativeSnapLivePage: null,
+      pendingAnchorFrame: null,
+      closeFootnoteForNavigation: vi.fn(),
+      measure,
+      rebuildTextIndexForCurrentDoc,
+      recompute,
+    });
+
+    ChapterPaginator.prototype.reflow.call(context as never);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(measure).toHaveBeenCalledWith(2);
+    expect(rebuildTextIndexForCurrentDoc).toHaveBeenCalledTimes(1);
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(recompute).toHaveBeenCalledWith(true, 2);
+  });
+
+  it("defers viewport reflow while page motion is actively moving and runs measure(loadSeq) once settled", withFakeWindowTimers(async () => {
+    const measure = vi.fn(async () => true);
+    const rebuildTextIndexForCurrentDoc = vi.fn();
+    const recompute = vi.fn(async () => true);
+    const context = Object.create(ChapterPaginator.prototype) as Record<string, any>;
+    const motion = {
+      viewer: {},
+      driver: { active: true, holdSettledAt: vi.fn(), read: () => ({ position: 1120 }) },
+      session: {
+        state: { kind: "settling", originPage: 0, targetPage: 1, ticket: 1 },
+        offsetOf: (p: number) => p * 1120,
+        pageCount: 3,
+      },
+      lease: { settled: vi.fn() },
+    };
+    Object.assign(context, {
+      disposed: false,
+      viewer: motion.viewer,
+      verticalMode: null,
+      loadSeq: 1,
+      displayReadySeq: 1,
+      deferredReflowLoadSeq: -1,
+      deferredViewportReflowLoadSeq: -1,
+      reflowSeq: 0,
+      metrics: { currentPage: 0 },
+      adoptedPageUncommitted: false,
+      pageMotionLivePage: 1,
+      pageMotionPendingChapter: null,
+      pageMotion: motion,
+      nativeSnapLivePage: null,
+      pendingAnchorFrame: null,
+      iframe: { clientWidth: 704, clientHeight: 571 },
+      measuredViewport: { width: 1120, height: 862 },
+      measuringViewport: null,
+      reflowMeasureController: null,
+      syncExpectedPagedScroll: vi.fn(),
+      readyState: () => ({ status: "ready", currentPage: 1, pageCount: 3, empty: false }),
+      emit: vi.fn(),
+      scheduleAnchorSample: vi.fn(),
+      notifyUserCommit: vi.fn(),
+      closeFootnoteForNavigation: vi.fn(),
+      measure,
+      rebuildTextIndexForCurrentDoc,
+      recompute,
+    });
+
+    ChapterPaginator.prototype.reflow.call(context as never);
+    await Promise.resolve();
+    expect(measure).not.toHaveBeenCalled();
+    expect(recompute).not.toHaveBeenCalled();
+
+    motion.session.state = { kind: "idle", page: 1 } as never;
+    (ChapterPaginator.prototype as unknown as { commitPageMotion(page: number): void }).commitPageMotion.call(context, 1);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(measure).toHaveBeenCalledWith(1);
+    expect(recompute).toHaveBeenCalledWith(true, 1);
+  }));
+
+  it("coalesces identical in-flight sizes, aborts superseded measures, and catches up after mid-recompute resizes", async () => {
+    const waiters: Array<{ resolve: (v: boolean) => void; seq: number }> = [];
+    const controllers: AbortController[] = [];
+    const recompute = vi.fn(async () => {
+      if (recompute.mock.calls.length === 1) {
+        context.iframe.clientWidth = 1000;
+        context.iframe.clientHeight = 700;
+      }
+      return true;
+    });
+    const context = Object.create(ChapterPaginator.prototype) as Record<string, any>;
+    const measure = vi.fn(() => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      context.reflowMeasureController = controller;
+      const seq = context.reflowSeq;
+      return new Promise<boolean>((resolve) => {
+        waiters.push({ resolve, seq });
+      });
+    });
+    Object.assign(context, {
+      disposed: false,
+      verticalMode: null,
+      loadSeq: 1,
+      displayReadySeq: 1,
+      deferredReflowLoadSeq: -1,
+      deferredViewportReflowLoadSeq: -1,
+      reflowSeq: 0,
+      nativeSnapLivePage: null,
+      pendingAnchorFrame: null,
+      iframe: { clientWidth: 800, clientHeight: 600 },
+      measuredViewport: { width: 1120, height: 862 },
+      measuringViewport: null,
+      reflowMeasureController: null,
+      closeFootnoteForNavigation: vi.fn(),
+      rebuildTextIndexForCurrentDoc: vi.fn(),
+      measure,
+      recompute,
+    });
+
+    ChapterPaginator.prototype.reflow.call(context as never);
+    expect(measure).toHaveBeenCalledTimes(1);
+
+    ChapterPaginator.prototype.reflow.call(context as never);
+    expect(measure).toHaveBeenCalledTimes(1);
+
+    context.iframe.clientWidth = 900;
+    context.iframe.clientHeight = 650;
+    ChapterPaginator.prototype.reflow.call(context as never);
+    expect(controllers[0].signal.aborted).toBe(true);
+    expect(measure).toHaveBeenCalledTimes(2);
+
+    waiters[0].resolve(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(recompute).not.toHaveBeenCalled();
+
+    context.measuredViewport = { width: 900, height: 650 };
+    waiters[1].resolve(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(measure).toHaveBeenCalledTimes(3);
+
+    context.measuredViewport = { width: 1000, height: 700 };
+    waiters[2].resolve(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(recompute).toHaveBeenCalledTimes(2);
+  });
+
+  it("debounces frame resizes over 250ms and clears pending resize timers on dispose", withFakeWindowTimers(async () => {
+    const reflowSpy = vi.fn();
+    const context = Object.create(ChapterPaginator.prototype) as Record<string, any>;
+    Object.assign(context, {
+      disposed: false,
+      loadSeq: 1,
+      deferredViewportReflowLoadSeq: 1,
+      reflow: reflowSpy,
+      disposePageMotion: vi.fn(),
+      directionSnapshot: null,
+      stopFrameResizeObserver: null,
+      cancelPendingAnchorSample: vi.fn(),
+      pendingPrecise: null,
+      resolveDisplayReady: null,
+      measureControllers: new Set(),
+      reflowTimer: undefined,
+      displayGate: { dispose: vi.fn() },
+      iframe: { removeEventListener: vi.fn(), src: "" },
+      onIframeLoad: vi.fn(),
+      cleanupDoc: vi.fn(),
+      footnoteHoverGate: { dispose: vi.fn() },
+      releaseResourceHolder: vi.fn(),
+      server: null,
+    });
+
+    (ChapterPaginator.prototype as unknown as { scheduleFrameResizeReflow(): void }).scheduleFrameResizeReflow.call(context);
+    await vi.advanceTimersByTimeAsync(249);
+    expect(reflowSpy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reflowSpy).toHaveBeenCalledTimes(1);
+
+    reflowSpy.mockClear();
+    (ChapterPaginator.prototype as unknown as { scheduleFrameResizeReflow(): void }).scheduleFrameResizeReflow.call(context);
+    (ChapterPaginator.prototype as unknown as { scheduleDeferredViewportReflow(seq: number): void }).scheduleDeferredViewportReflow.call(context, 1);
+    expect(vi.getTimerCount()).toBe(2);
+
+    ChapterPaginator.prototype.dispose.call(context as never);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(reflowSpy).not.toHaveBeenCalled();
+  }));
 });
 
 describe("paged layout settled notification", () => {

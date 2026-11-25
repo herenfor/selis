@@ -199,8 +199,16 @@ export class ChapterPaginator {
   }
   /** 最近一次完整 measure 使用的 iframe 视口；过滤 ResizeObserver 空转。 */
   private measuredViewport = { width: -1, height: -1 };
+  /** 当前正在异步测量的视口，避免同尺寸重入、并在尺寸逆转时不误判为未变化。 */
+  private measuringViewport: { loadSeq: number; width: number; height: number } | null = null;
+  /** 进行中的 reflow measure 中止器；新尺寸到达时取消旧测量。 */
+  private reflowMeasureController: AbortController | null = null;
   /** 首次显示准备期间收到的重排请求所属 loadSeq；同一轮只排一次补做。 */
   private deferredReflowLoadSeq = -1;
+  /** 翻页运动进行期间收到的视口尺寸重排请求所属 loadSeq。 */
+  private deferredViewportReflowLoadSeq = -1;
+  private viewportReflowTimer: number | undefined;
+  private frameResizeTimer: number | undefined;
   /** 同上，针对图片/样式表 load 触发的内容重排。 */
   private deferredContentReflowLoadSeq = -1;
   private metrics = { pageCount: 1, currentPage: 0 };
@@ -583,7 +591,7 @@ export class ChapterPaginator {
     shouldIgnorePlainTap,
   }: ChapterPaginatorOptions) {
     this.iframe = iframe;
-    this.stopFrameResizeObserver = observeFrameResize(iframe, () => this.reflow());
+    this.stopFrameResizeObserver = observeFrameResize(iframe, () => this.scheduleFrameResizeReflow());
     iframe.setAttribute?.("sandbox", "allow-same-origin");
     this.server = server;
     this.settings = settings;
@@ -1333,6 +1341,7 @@ export class ChapterPaginator {
     if (pending !== null && (pending === 1 ? page === motion.session.pageCount - 1 : page === 0)) {
       this.pageMotionChapterHandler?.(pending);
     }
+    this.flushDeferredViewportReflow();
   }
 
   private onPageMotionFault(error: unknown): void {
@@ -1343,6 +1352,7 @@ export class ChapterPaginator {
     const position = motion.driver.read().position;
     this.disposePageMotion();
     this.setPage(readSnapPosition(this.nativeSnapOffsets(), position)?.page ?? this.metrics.currentPage);
+    this.flushDeferredViewportReflow();
   }
 
   /**
@@ -1395,6 +1405,7 @@ export class ChapterPaginator {
     }
     // 途中报告过别的页、最后又落回原页时 setPage 不会再发状态，这里补一次。
     else if (livePage !== null && livePage !== page) this.emit(this.readyState(false));
+    this.flushDeferredViewportReflow();
   }
 
   /**
@@ -1507,6 +1518,10 @@ export class ChapterPaginator {
       this.hasPrevChapter = opts.hasPrevChapter;
     }
     this.scrollWheelAcc = 0;
+    this.clearViewportReflowTimers();
+    this.deferredViewportReflowLoadSeq = -1;
+    this.measuringViewport = null;
+    this.reflowMeasureController = null;
     this.abortMeasureWaits();
     const seq = ++this.loadSeq;
     this.cancelPendingAnchorSample?.();
@@ -1930,6 +1945,7 @@ export class ChapterPaginator {
   private async measure(expectedLoadSeq: number = this.loadSeq): Promise<boolean> {
     const doc = this.contentDoc;
     const viewer = this.viewer;
+    const expectedReflowSeq = this.reflowSeq;
     if (
       !doc ||
       !viewer ||
@@ -2231,6 +2247,9 @@ export class ChapterPaginator {
     void viewer.scrollWidth;
     const waitController = new AbortController();
     this.measureControllers.add(waitController);
+    if (this.displayReadySeq === expectedLoadSeq) {
+      this.reflowMeasureController = waitController;
+    }
     try {
       // fonts.ready 极端情况下可能挂起（字体请求异常），5s 超时兜底
       const fonts = await waitForFontsReady(doc.fonts?.ready ?? Promise.resolve(), {
@@ -2239,6 +2258,7 @@ export class ChapterPaginator {
       });
       if (fonts === "aborted") return false;
       if (
+        expectedReflowSeq !== this.reflowSeq ||
         !isChapterMeasurementCurrent({
           disposed: this.disposed,
           loadSeq: this.loadSeq,
@@ -2260,6 +2280,7 @@ export class ChapterPaginator {
       });
       if (frames === "aborted") return false;
       if (
+        expectedReflowSeq !== this.reflowSeq ||
         !isChapterMeasurementCurrent({
           disposed: this.disposed,
           loadSeq: this.loadSeq,
@@ -2311,15 +2332,18 @@ export class ChapterPaginator {
         this.pageWidth = Math.max(0, viewer.clientWidth);
         this.step = 0;
         this.measuredViewport = { width: measuredWidth, height: measuredHeight };
-        return isChapterMeasurementCurrent({
-          disposed: this.disposed,
-          loadSeq: this.loadSeq,
-          expectedLoadSeq,
-          contentDoc: this.contentDoc,
-          expectedDoc: doc,
-          viewer: this.viewer,
-          expectedViewer: viewer,
-        });
+        return (
+          expectedReflowSeq === this.reflowSeq &&
+          isChapterMeasurementCurrent({
+            disposed: this.disposed,
+            loadSeq: this.loadSeq,
+            expectedLoadSeq,
+            contentDoc: this.contentDoc,
+            expectedDoc: doc,
+            viewer: this.viewer,
+            expectedViewer: viewer,
+          })
+        );
       }
       // [L5-C18] fit-content 会改变最终 border-box 宽度，必须先稳定宽度再计算
       // 页面级 margin；反过来会把多栏中的异常旧宽度固化成错误横向位置。
@@ -2372,16 +2396,22 @@ export class ChapterPaginator {
           bottom: px(style.paddingBottom),
         };
       }
-      return isChapterMeasurementCurrent({
-        disposed: this.disposed,
-        loadSeq: this.loadSeq,
-        expectedLoadSeq,
-        contentDoc: this.contentDoc,
-        expectedDoc: doc,
-        viewer: this.viewer,
-        expectedViewer: viewer,
-      });
+      return (
+        expectedReflowSeq === this.reflowSeq &&
+        isChapterMeasurementCurrent({
+          disposed: this.disposed,
+          loadSeq: this.loadSeq,
+          expectedLoadSeq,
+          contentDoc: this.contentDoc,
+          expectedDoc: doc,
+          viewer: this.viewer,
+          expectedViewer: viewer,
+        })
+      );
     } finally {
+      if (this.reflowMeasureController === waitController) {
+        this.reflowMeasureController = null;
+      }
       this.measureControllers.delete(waitController);
       waitController.abort();
     }
@@ -7163,6 +7193,76 @@ export class ChapterPaginator {
 
   private _currentPath = "";
 
+  private timerHost(): { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout } {
+    return typeof window !== "undefined" ? window : globalThis;
+  }
+
+  /**
+   * 仅在翻页动画/拖动/原生吸附进行中推迟重排。
+   * TransformPageMotion 前景空闲驻留窗口（driver.active=true, state.kind="idle"）
+   * 不算运动，必须允许窗口缩放、固定目录或资源加载立即重排，否则会无限延期。
+   */
+  private isPageMotionMoving(): boolean {
+    if (this.nativeSnapLivePage != null) return true;
+    const kind = this.pageMotion?.session?.state?.kind;
+    return kind === "dragging" || kind === "settling" || kind === "external";
+  }
+
+  private clearViewportReflowTimers(): void {
+    const timers = this.timerHost();
+    if (this.frameResizeTimer !== undefined) {
+      timers.clearTimeout(this.frameResizeTimer);
+      this.frameResizeTimer = undefined;
+    }
+    if (this.viewportReflowTimer !== undefined) {
+      timers.clearTimeout(this.viewportReflowTimer);
+      this.viewportReflowTimer = undefined;
+    }
+  }
+
+  /** 合并 iframe 直接 ResizeObserver 连续回调，与宿主 250ms 拖动防抖一致；主动 reflow() 会立即取消。 */
+  private scheduleFrameResizeReflow(): void {
+    if (this.disposed) return;
+    const timers = this.timerHost();
+    if (this.frameResizeTimer !== undefined) timers.clearTimeout(this.frameResizeTimer);
+    const seq = this.loadSeq;
+    this.frameResizeTimer = timers.setTimeout(() => {
+      this.frameResizeTimer = undefined;
+      if (!this.disposed && seq === this.loadSeq) this.reflow();
+    }, 250) as unknown as number;
+  }
+
+  private scheduleDeferredViewportReflow(loadSeq: number): void {
+    this.deferredViewportReflowLoadSeq = loadSeq;
+    const timers = this.timerHost();
+    if (this.viewportReflowTimer !== undefined) timers.clearTimeout(this.viewportReflowTimer);
+    this.viewportReflowTimer = timers.setTimeout(() => {
+      this.viewportReflowTimer = undefined;
+      if (!this.disposed && this.deferredViewportReflowLoadSeq === this.loadSeq) {
+        this.reflow();
+      }
+    }, 120) as unknown as number;
+  }
+
+  private flushDeferredViewportReflow(): void {
+    if (
+      this.disposed ||
+      typeof this.deferredViewportReflowLoadSeq !== "number" ||
+      this.deferredViewportReflowLoadSeq < 0 ||
+      this.deferredViewportReflowLoadSeq !== this.loadSeq ||
+      this.isPageMotionMoving()
+    ) {
+      return;
+    }
+    this.deferredViewportReflowLoadSeq = -1;
+    if (this.viewportReflowTimer !== undefined) {
+      this.timerHost().clearTimeout(this.viewportReflowTimer);
+      this.viewportReflowTimer = undefined;
+    }
+    if (this.pendingAnchorFrame != null) this.flushReadingAnchor();
+    this.reflow();
+  }
+
   private scheduleReflow(): void {
     if (this.reflowTimer !== undefined) window.clearTimeout(this.reflowTimer);
     const seq = this.loadSeq;
@@ -7171,7 +7271,7 @@ export class ChapterPaginator {
       if (this.disposed || seq !== this.loadSeq) return;
       // 翻页快照/运动在途：图片或字体加载触发的重排会拆掉当前驱动，
       // 让动画停在半页。等运动落定后再重排，最多多等一个收尾时长。
-      if (this.pageMotion?.driver.active) {
+      if (this.isPageMotionMoving()) {
         this.scheduleReflow();
         return;
       }
@@ -7195,10 +7295,12 @@ export class ChapterPaginator {
    *  不捕获锚点：直接使用上一次稳定状态存下的锚点（缩放前的位置）。 */
   reflow(): void {
     if (this.disposed) return;
-    if (this.pageMotion?.driver.active) {
-      this.scheduleReflow();
+    this.clearViewportReflowTimers?.();
+    if (this.isPageMotionMoving()) {
+      this.scheduleDeferredViewportReflow(this.loadSeq);
       return;
     }
+    this.deferredViewportReflowLoadSeq = -1;
     // 本次加载还在首次显示准备中（测量→入口恢复）：不并行另起一轮 measure。
     // 两轮共用同一 loadSeq，互相还原/改写几何与文本索引，会把保存位置
     // 解析到章首并被当作恢复结果写回（ER-0090）。等这一轮结算后再按当时
@@ -7214,27 +7316,52 @@ export class ChapterPaginator {
       });
       return;
     }
+    const targetW = this.iframe.clientWidth;
+    const targetH = this.iframe.clientHeight;
+    const inFlight = this.measuringViewport?.loadSeq === this.loadSeq ? this.measuringViewport : null;
     // ResizeObserver 在组件挂载和章节切换时也可能回调，即使 iframe 尺寸
     // 完全没变。重复 measure 会先恢复二阶段补偿，造成已稳定盒子短暂跳位。
-    if (
-      this.iframe.clientWidth === this.measuredViewport.width &&
-      this.iframe.clientHeight === this.measuredViewport.height
-    ) {
+    if (!inFlight && targetW === this.measuredViewport.width && targetH === this.measuredViewport.height) {
       return;
     }
+    if (inFlight && inFlight.width === targetW && inFlight.height === targetH) {
+      return;
+    }
+    if (this.pendingAnchorFrame != null) this.flushReadingAnchor();
     // A real resize can move the marker to another column/page.  Pinned
     // footnotes are position-scoped; same-size ResizeObserver no-ops above
     // must not close anything.
     this.closeFootnoteForNavigation();
+    this.reflowMeasureController?.abort();
+    this.reflowMeasureController = null;
     const seq = ++this.reflowSeq;
     const loadSeq = this.loadSeq;
-    void this.measure(loadSeq).then((measured) => {
-      // 过期测量（更早发起、更晚完成/切章后）直接丢弃，防布局/位置被覆写
-      if (measured && !this.disposed && seq === this.reflowSeq && loadSeq === this.loadSeq) {
+    this.measuringViewport = { loadSeq, width: targetW, height: targetH };
+    void Promise.resolve(this.measure(loadSeq)).then(
+      (measured) => {
+        if (this.measuringViewport?.loadSeq === loadSeq && seq === this.reflowSeq) {
+          this.measuringViewport = null;
+        }
+        // 过期测量（更早发起、更晚完成/切章后）直接丢弃，防布局/位置被覆写
+        if (!measured || this.disposed || seq !== this.reflowSeq || loadSeq !== this.loadSeq) return;
         if (!this.verticalMode) this.rebuildTextIndexForCurrentDoc();
-        void this.recompute(true, loadSeq);
-      }
-    });
+        void Promise.resolve(this.recompute(true, loadSeq)).then(() => {
+          if (
+            !this.disposed &&
+            seq === this.reflowSeq &&
+            loadSeq === this.loadSeq &&
+            (this.iframe.clientWidth !== targetW || this.iframe.clientHeight !== targetH)
+          ) {
+            this.reflow();
+          }
+        });
+      },
+      () => {
+        if (this.measuringViewport?.loadSeq === loadSeq && seq === this.reflowSeq) {
+          this.measuringViewport = null;
+        }
+      },
+    );
   }
 
   /** 键盘翻页（书页内焦点）。 */
@@ -7877,8 +8004,12 @@ export class ChapterPaginator {
     this.loadSeq++;
     this.resolveDisplayReady?.(false);
     this.resolveDisplayReady = null;
+    this.clearViewportReflowTimers();
+    this.deferredViewportReflowLoadSeq = -1;
+    this.measuringViewport = null;
+    this.reflowMeasureController = null;
     this.abortMeasureWaits();
-    window.clearTimeout(this.reflowTimer);
+    this.timerHost().clearTimeout(this.reflowTimer);
     this.displayGate.dispose();
     this.iframe.removeEventListener("load", this.onIframeLoad);
     this.cleanupDoc();
