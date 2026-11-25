@@ -3,6 +3,7 @@
 [![Download latest release](.github/readme/release.svg)](https://github.com/herenfor/selis/releases/latest)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Android-informational)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Sponsor on Afdian](https://img.shields.io/badge/sponsor-Afdian-946ce6)](https://afdian.com/a/herenfor)
 
 SeLis is a quiet, multi-format reader for Windows and Android. It opens **EPUB** books, **TXT** plain-text books and **CBZ / ZIP** image comics, and stays out of the way while you read.
 
@@ -24,6 +25,7 @@ Books are presented as their creators designed them: page width, asymmetric marg
 - [Roadmap](#roadmap)
 - [Feedback](#feedback)
 - [Contributors and thanks](#contributors-and-thanks)
+- [Sponsor](#sponsor)
 - [License](#license)
 
 ## Platforms
@@ -193,6 +195,18 @@ Bugs and suggestions are welcome in [Issues](https://github.com/herenfor/selis/i
 ## Contributors and thanks
 
 - [mcss1314](https://github.com/mcss1314) — **Primary tester**, for ongoing release testing, reproducing bugs, and providing detailed feedback and suggestions.
+
+## Sponsor
+
+SeLis is free and open-source software — all features are open to everyone with no ads or tracking.
+
+If SeLis has been useful to you and you would like to support its ongoing development and maintenance, you can sponsor the project on Afdian:
+
+[![Sponsor on Afdian](https://img.shields.io/badge/Afdian-Sponsor%20SeLis-946ce6?style=for-the-badge)](https://afdian.com/a/herenfor)
+
+- **Afdian (爱发电)**: [https://afdian.com/a/herenfor](https://afdian.com/a/herenfor)
+
+Sponsorship is completely voluntary. Starring the repository, sharing SeLis with friends, or submitting bug reports and suggestions helps just as much.
 
 ## License
 
