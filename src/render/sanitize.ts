@@ -372,6 +372,11 @@ export async function sanitizeChapter(
     for (const el of Array.from(doc.getElementsByTagName("noscript"))) {
       el.parentNode?.removeChild(el);
     }
+    // 沙箱 iframe 的 scripting 仍关闭，Chromium 会把 <canvas> 当作不支持并渲染
+    // 回退内容；脚本启用时浏览器会隐藏它，这里清掉回退子节点、保留 canvas 本身。
+    for (const el of Array.from(doc.getElementsByTagName("canvas"))) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+    }
   }
   const [images, scripts] = await Promise.all([
     permission?.networkEnabled ? prepareBookImages(doc, opts, permission.signal) : undefined,

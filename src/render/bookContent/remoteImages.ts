@@ -51,7 +51,9 @@ function imageAddresses(doc: Document, options: SanitizeOptions): string[] {
   for (const node of Array.from(doc.getElementsByTagName("*"))) {
     if (addresses.size >= MAX_IMAGES) break;
     const tag = node.localName.toLowerCase();
-    if (node.closest("iframe,frame,object,embed,template,form,noscript")) continue;
+    // <noscript> 回退内容在 JavaScript 关闭时是可见的，里面的远程图也应参与取图；
+    // 开启 JavaScript 时 sanitizeChapter 会先移除 <noscript>，这里不会再看到它。
+    if (node.closest("iframe,frame,object,embed,template,form")) continue;
     if (tag === "img") collect(node.getAttribute("src"));
     if (tag === "video") collect(node.getAttribute("poster"));
     if (tag === "image") collect(node.getAttribute("href") ?? node.getAttribute("xlink:href"));

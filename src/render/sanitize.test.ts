@@ -310,6 +310,26 @@ describe("sanitizeChapter", () => {
     expect(on.html).toContain("正文");
   });
 
+  it("JavaScript 权限开启时清空 <canvas> 回退内容，关闭时保留", async () => {
+    const html = `<html xmlns="http://www.w3.org/1999/xhtml"><body><canvas width="100" height="50"><p>画布回退</p></canvas></body></html>`;
+    const off = await sanitizeChapter(html, opts());
+    expect(off.html).toContain("画布回退");
+    const on = await sanitizeChapter(html, {
+      ...opts(),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        bookContentPermissions: {
+          chapterPath: "OEBPS/Text/ch1.xhtml",
+          networkEnabled: false,
+          javascriptEnabled: true,
+          signal: new AbortController().signal,
+        },
+      },
+    });
+    expect(on.html).not.toContain("画布回退");
+    expect(on.html).toContain("<canvas");
+  });
+
   it("自闭合 <script/>（XHTML 风格）不吞正文：先补闭合再删除", async () => {
     // 真实书场景：HTML 解析器忽略 script 自闭合标志，会吞掉全部后续内容
     const html = `<html xmlns="http://www.w3.org/1999/xhtml"><head>
