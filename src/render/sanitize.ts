@@ -365,6 +365,14 @@ export async function sanitizeChapter(
     throw new Error("章节内容为空，无法渲染");
   }
   const permission = permissionsForChapter(opts.settings.bookContentPermissions, opts.basePath);
+  // <noscript> 是“脚本未执行”时的回退内容。章节 iframe 始终不启用脚本执行
+  // （书脚本在 QuickJS 沙箱里跑），浏览器不会自己隐藏它；用户打开 JavaScript
+  // 开关时由这里移除，保持与“脚本已启用”一致的可见结果。
+  if (permission?.javascriptEnabled) {
+    for (const el of Array.from(doc.getElementsByTagName("noscript"))) {
+      el.parentNode?.removeChild(el);
+    }
+  }
   const [images, scripts] = await Promise.all([
     permission?.networkEnabled ? prepareBookImages(doc, opts, permission.signal) : undefined,
     permission?.javascriptEnabled ? readBookScripts(doc, opts, permission.signal) : [],
