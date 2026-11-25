@@ -4,6 +4,7 @@ import { isLayoutResourceLoad } from "./resourceLoadReflow";
 describe("layout resource load events", () => {
   it("reflows for images and linked stylesheets", () => {
     expect(isLayoutResourceLoad({ target: { localName: "img" } } as unknown as Event)).toBe(true);
+    expect(isLayoutResourceLoad({ target: { localName: "image" } } as unknown as Event)).toBe(true);
     expect(isLayoutResourceLoad({ target: { localName: "LINK" } } as unknown as Event)).toBe(true);
   });
 
