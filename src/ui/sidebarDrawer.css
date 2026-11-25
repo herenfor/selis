@@ -382,6 +382,16 @@
   background: var(--panel-bg);
 }
 
+/* 清除由右侧 .sidebar-toc-filter-clear 承担；隐藏原生 search 取消按钮避免两个 X。 */
+.sidebar-toc-filter-input::-webkit-search-cancel-button,
+.sidebar-toc-filter-input::-webkit-search-decoration,
+.sidebar-toc-filter-input::-webkit-search-results-button,
+.sidebar-toc-filter-input::-webkit-search-results-decoration {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .sidebar-toc-filter-clear {
   position: absolute;
   right: 18px;

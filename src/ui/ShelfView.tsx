@@ -1334,6 +1334,12 @@ export function ShelfView(props: ShelfViewProps) {
     setBodySearchOpen(false);
     if (isCompactMobile) onSearchModeChange?.("metadata");
   }, [isCompactMobile, onSearchModeChange]);
+  // 顶栏搜索框的清除按钮：书名作者清本地 query，正文清共享搜索词；原生 search 取消按钮已由 CSS 隐藏。
+  const topSearchClearable = searchMode === "body" ? Boolean(bodySearch?.query) : Boolean(query);
+  const clearTopSearch = (): void => {
+    if (searchMode === "body") bodySearch?.onQueryChange("");
+    else setQuery("");
+  };
   const filterCount = shelfFilterCount(filters);
 
   /** Resolves false on failure; App has already reported it through the shelf notice. */
@@ -2414,11 +2420,11 @@ export function ShelfView(props: ShelfViewProps) {
                     aria-label={t("shelfMain.search.quick.label")}
                   />
                 )}
-                {searchMode === "metadata" && query && (
+                {topSearchClearable && (
                   <button
                     className="shelf-quick-filter-clear"
                     type="button"
-                    onClick={() => setQuery("")}
+                    onClick={clearTopSearch}
                     aria-label={t("shelfMain.search.clear")}
                     title={t("shelfMain.search.clear.tip")}
                   >

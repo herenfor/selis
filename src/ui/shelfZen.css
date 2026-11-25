@@ -243,6 +243,16 @@
   font-size: var(--fs-caption);
 }
 
+/* 清除由右侧 .shelf-quick-filter-clear 承担；原生 search 取消按钮会与它并排成两个 X。 */
+.shelf-quick-filter-input::-webkit-search-cancel-button,
+.shelf-quick-filter-input::-webkit-search-decoration,
+.shelf-quick-filter-input::-webkit-search-results-button,
+.shelf-quick-filter-input::-webkit-search-results-decoration {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .shelf-quick-filter-clear {
   display: flex;
   align-items: center;

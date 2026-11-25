@@ -65,6 +65,59 @@ describe("ShelfZen Packet 1 现代书架体验", () => {
     }
   });
 
+  it("ER-0246：搜索框只保留一个清除按钮，书名与正文各自清除", async () => {
+    const dom = createReactDomHarness();
+    const cleared: string[] = [];
+    const bodySearch = {
+      query: "魔法",
+      onQueryChange: (next: string) => cleared.push(next),
+      results: [],
+      status: "idle" as const,
+      processed: 0,
+      total: 0,
+      onSelect: () => {},
+    };
+    const base: ShelfViewProps = {
+      entries: [makeEntry("b1", "魔法禁书目录", "镰池和马", 0)],
+      organization: emptyOrganization(),
+      busy: false,
+      theme: "light",
+      onThemeChange: () => {},
+      onOpen: () => {},
+      onImport: () => {},
+      onImportArchive: () => {},
+      onExportArchive: () => {},
+      onDelete: () => {},
+      onDeleteMany: () => {},
+      searchMode: "body",
+      onSearchModeChange: () => {},
+      bodySearch,
+    };
+    try {
+      await dom.render(createElement(ShelfView, base));
+      // 正文模式：清除按钮清的是共享搜索词；原生 search 取消按钮已由 CSS 隐藏，DOM 里只剩这一个。
+      const bodyClears = dom.container.querySelectorAll(".shelf-quick-filter-clear");
+      expect(bodyClears).toHaveLength(1);
+      await dom.click(bodyClears[0]);
+      expect(cleared).toEqual([""]);
+
+      // 书名作者模式：输入后同样只有一个清除按钮，点击清空本地查询。
+      await dom.render(createElement(ShelfView, { ...base, searchMode: "metadata", bodySearch: { ...bodySearch, query: "" } }));
+      expect(dom.container.querySelectorAll(".shelf-quick-filter-clear")).toHaveLength(0);
+      const input = dom.container.querySelector(".shelf-quick-filter-input") as HTMLInputElement;
+      Object.assign(input, { attachEvent() {}, detachEvent() {} });
+      await dom.dispatch(input, new dom.window.Event("focusin", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")!.set!.call(input, "魔法");
+      await dom.dispatch(input, new dom.window.Event("keyup", { bubbles: true }));
+      const metadataClears = dom.container.querySelectorAll(".shelf-quick-filter-clear");
+      expect(metadataClears).toHaveLength(1);
+      await dom.click(metadataClears[0]);
+      expect(dom.container.querySelectorAll(".shelf-quick-filter-clear")).toHaveLength(0);
+    } finally {
+      await dom.dispose();
+    }
+  });
+
   it("Level 2: 渲染正在阅读续读控制台，支持点击开书与折叠", async () => {
     const dom = createReactDomHarness();
     const opened: string[] = [];
