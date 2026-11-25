@@ -88,4 +88,17 @@ describe("single-leaf chapter spreads (A13)", () => {
     spreads.retryRejected();
     expect(await spreads.resolve(4, signal)).toEqual({ left: 3, right: 4 });
   });
+
+  it("re-resolves the current chapter after a rejected pair is retried", async () => {
+    const { spreads, asked, signal } = fixture("11M");
+    const initialPair = await spreads.resolve(0, signal);
+    expect(initialPair).toEqual({ left: 0, right: 1 });
+
+    spreads.reject(initialPair!);
+    expect(await spreads.resolve(0, signal)).toBeNull();
+
+    spreads.retryRejected();
+    expect(await spreads.resolve(0, signal)).toEqual({ left: 0, right: 1 });
+    expect(asked.filter((index) => index < 2)).toEqual([0, 1]);
+  });
 });

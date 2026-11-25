@@ -99,7 +99,6 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
   private disposed = false;
   private readonly doc: Document;
   private readonly win: Window | null;
-  private readonly style: HTMLStyleElement | null;
   private hostOverlay: HTMLElement | null = null;
   private hostOverlayZIndex = "";
 
@@ -110,7 +109,7 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
   constructor(private readonly options: ViewTransitionMotionOptions) {
     this.doc = options.viewer.ownerDocument;
     this.win = this.doc.defaultView;
-    this.style = this.installStyle();
+    this.installStyle();
     options.viewer.style.setProperty("view-transition-name", PAGE_NAME);
   }
 
@@ -214,7 +213,6 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     this.restoreHostOverlay();
     this.cleanup();
     this.options.viewer.style.removeProperty("view-transition-name");
-    this.style?.remove();
   }
 
   private startTurn(direction: 1 | -1, current: number, onReady?: () => void): void {
@@ -434,13 +432,12 @@ export class ViewTransitionPageMotion implements PageMotionSurfaceDriver {
     return "#fff";
   }
 
-  private installStyle(): HTMLStyleElement | null {
+  private installStyle(): void {
     const existing = this.doc.getElementById(STYLE_ID);
-    if (existing) return existing as HTMLStyleElement;
+    if (existing) return;
     const style = this.doc.createElement("style");
     style.id = STYLE_ID;
     style.textContent = COVER_STYLE;
     (this.doc.head ?? this.doc.documentElement).appendChild(style);
-    return style;
   }
 }

@@ -87,20 +87,24 @@ describe("pagedSpread core", () => {
   });
 
   describe("createSpreadGeometry and styles", () => {
-    it("respects the 280px minimum column width threshold for 1 vs 2 columns", () => {
-      // (583 - 24) / 2 = 279.5 < 280 => fallback to 1 column
-      const g1 = createSpreadGeometry(583, 24, 2);
+    it("respects the 320px minimum column width threshold for 1 vs 2 columns", () => {
+      // (663 - 24) / 2 = 319.5 < 320 => fallback to 1 column
+      const g1 = createSpreadGeometry(663, 24, 2);
       expect(g1.columns).toBe(1);
-      expect(g1.columnWidth).toBe(583);
-      expect(g1.columnStep).toBe(607);
-      expect(g1.spreadStep).toBe(607);
+      expect(g1.columnWidth).toBe(663);
+      expect(g1.columnStep).toBe(687);
+      expect(g1.spreadStep).toBe(687);
 
-      // (584 - 24) / 2 = 280 >= 280 => 2 columns
-      const g2 = createSpreadGeometry(584, 24, 2);
+      // (664 - 24) / 2 = 320 => 2 columns
+      const g2 = createSpreadGeometry(664, 24, 2);
       expect(g2.columns).toBe(2);
-      expect(g2.columnWidth).toBe(280);
-      expect(g2.columnStep).toBe(304);
-      expect(g2.spreadStep).toBe(608);
+      expect(g2.columnWidth).toBe(320);
+      expect(g2.columnStep).toBe(344);
+      expect(g2.spreadStep).toBe(688);
+
+      // The reported 624px window leaves a 295px reading viewport after padding.
+      expect(createSpreadGeometry(614, 24, 2).columns).toBe(1);
+      expect(createSpreadGeometry(700, 24, 2).columns).toBe(2);
     });
 
     it("handles non-integer viewport widths without loss of precision", () => {

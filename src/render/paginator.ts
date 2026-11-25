@@ -42,6 +42,8 @@ import { createReaderTheme } from "./readerTheme";
 import type { ReaderThemeController } from "./readerTheme";
 import { FootnoteHoverGate } from "./footnoteHoverGate";
 import { waitForDoubleRaf, waitForFontsReady } from "./asyncWait";
+import { isLayoutResourceLoad } from "./resourceLoadReflow";
+import { observeFrameResize } from "./frameResize";
 import { buildVisibleTextIndex, captureTextSelection, collectVisibleTextNodes, resolveTextAnchorOffset, resolveTextRangeOffsets } from "./textAnchor";
 import type { VisibleTextIndex } from "./textAnchor";
 import { compileTextProjection, isIdentityTextProjection, textProjectionVersion } from "./textProjection/compile";
@@ -211,7 +213,9 @@ export class ChapterPaginator {
   /** Each measure owns its controller; lifecycle aborts all without cross-killing. */
   private measureControllers = new Set<AbortController>();
   private reflowTimer: number | undefined;
-  private imgHandler = (): void => this.scheduleReflow();
+  private imgHandler = (event: Event): void => {
+    if (isLayoutResourceLoad(event)) this.scheduleReflow();
+  };
   private linkHandler = (e: Event): void => this.handleLinkClick(e);
   private wheelHandler = (e: WheelEvent): void => this.handleWheel(e);
   private wheelAcc = 0;
@@ -390,6 +394,7 @@ export class ChapterPaginator {
     key: string;
     viewer: HTMLElement;
   } | null = null;
+  private stopFrameResizeObserver: (() => void) | null = null;
   /** 该布局不满足窗口驱动前提（屏宽不均/栏数不定）时记下，避免反复尝试。 */
   private pageMotionUnsupportedKey = "";
   private pageMotionDragBase = 0;
@@ -578,6 +583,7 @@ export class ChapterPaginator {
     shouldIgnorePlainTap,
   }: ChapterPaginatorOptions) {
     this.iframe = iframe;
+    this.stopFrameResizeObserver = observeFrameResize(iframe, () => this.reflow());
     iframe.setAttribute?.("sandbox", "allow-same-origin");
     this.server = server;
     this.settings = settings;
@@ -7861,6 +7867,8 @@ export class ChapterPaginator {
     this.directionSnapshot?.restore();
     this.directionSnapshot = null;
     this.disposed = true;
+    this.stopFrameResizeObserver?.();
+    this.stopFrameResizeObserver = null;
     this.cancelPendingAnchorSample?.();
     if (this.pendingPrecise) {
       this.reportPreciseStatus(this.pendingPrecise.request, "cancelled", false);
