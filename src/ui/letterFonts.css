@@ -1,0 +1,19 @@
+@font-face {
+  font-family: "SeLisLetter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/LXGWWenKai-Common-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "SeLisLetter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/LXGWWenKai-Common-Medium.woff2") format("woff2");
+}
+
+:root {
+  --font-letter: "SeLisLetter", "Noto Serif CJK SC", "Source Han Serif SC", "PingFang SC", "Microsoft YaHei UI", Georgia, serif;
+}

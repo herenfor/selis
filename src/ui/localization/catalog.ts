@@ -52,6 +52,7 @@ import { readerMisc } from "./catalogs/readerMisc";
 import { tapRegions } from "./catalogs/tapRegions";
 import { log } from "./catalogs/log";
 import { cloudSync } from "./catalogs/cloudSync";
+import { readingLetter } from "./catalogs/readingLetter";
 import { ai } from "./catalogs/ai";
 import commonEn from "./en/common.json";
 import folderEn from "./en/folder.json";
@@ -90,6 +91,7 @@ import readerMiscEn from "./en/readerMisc.json";
 import tapRegionsEn from "./en/tapRegions.json";
 import logEn from "./en/log.json";
 import cloudSyncEn from "./en/cloudSync.json";
+import readingLetterEn from "./en/readingLetter.json";
 import aiEn from "./en/ai.json";
 import commonZhTW from "./zh-TW/common.json";
 import folderZhTW from "./zh-TW/folder.json";
@@ -128,6 +130,7 @@ import readerMiscZhTW from "./zh-TW/readerMisc.json";
 import tapRegionsZhTW from "./zh-TW/tapRegions.json";
 import logZhTW from "./zh-TW/log.json";
 import cloudSyncZhTW from "./zh-TW/cloudSync.json";
+import readingLetterZhTW from "./zh-TW/readingLetter.json";
 import aiZhTW from "./zh-TW/ai.json";
 
 declare const __APP_EDITION__: "core" | "ai";
@@ -135,7 +138,7 @@ declare const __APP_EDITION__: "core" | "ai";
 // tooling runs outside Vite and must still see every catalog.
 const includeAi = typeof __APP_EDITION__ === "undefined" || __APP_EDITION__ === "ai";
 
-export const CATALOGS = [common, folder, language, reader, startup, titlebar, footer, sidebar, notes, imageViewer, search, aa, fonts, display, about, cache, libraryLocation, saveFile, bookExport, readestImport, koreaderImport, share, importProgress, lan, lanPanel, folderImport, shelf, shelfFolder, shelfMenu, shelfMain, shelfSettings, notice, appUi, readerMisc, tapRegions, log, cloudSync, ...(includeAi ? [ai] : [])] as const;
+export const CATALOGS = [common, folder, language, reader, startup, titlebar, footer, sidebar, notes, imageViewer, search, aa, fonts, display, about, cache, libraryLocation, saveFile, bookExport, readestImport, koreaderImport, share, importProgress, lan, lanPanel, folderImport, shelf, shelfFolder, shelfMenu, shelfMain, shelfSettings, notice, appUi, readerMisc, tapRegions, log, cloudSync, readingLetter, ...(includeAi ? [ai] : [])] as const;
 
 export const zhCN = {
   ...common.zh,
@@ -175,6 +178,7 @@ export const zhCN = {
   ...tapRegions.zh,
   ...log.zh,
   ...cloudSync.zh,
+  ...readingLetter.zh,
   // Keep the complete key type for AI components; Core never renders them.
   ...(includeAi ? ai.zh : {} as typeof ai.zh),
 };
@@ -220,6 +224,7 @@ export const en: Partial<Record<MessageKey, string>> = {
   ...tapRegionsEn,
   ...logEn,
   ...cloudSyncEn,
+  ...readingLetterEn,
   ...(includeAi ? aiEn : {}),
 };
 
@@ -262,6 +267,7 @@ export const EN_FILES: Readonly<Record<string, Readonly<Record<string, string>>>
   tapRegions: tapRegionsEn,
   log: logEn,
   cloudSync: cloudSyncEn,
+  readingLetter: readingLetterEn,
   ...(includeAi ? { ai: aiEn } : {}),
 };
 
@@ -304,6 +310,7 @@ export const zhTW: Partial<Record<MessageKey, string>> = {
   ...tapRegionsZhTW,
   ...logZhTW,
   ...cloudSyncZhTW,
+  ...readingLetterZhTW,
   ...(includeAi ? aiZhTW : {}),
 };
 
@@ -346,5 +353,6 @@ export const ZH_TW_FILES: Readonly<Record<string, Readonly<Record<string, string
   tapRegions: tapRegionsZhTW,
   log: logZhTW,
   cloudSync: cloudSyncZhTW,
+  readingLetter: readingLetterZhTW,
   ...(includeAi ? { ai: aiZhTW } : {}),
 };

@@ -118,6 +118,11 @@ import { FootnotePop } from "./ui/FootnotePop";
 import { LogPanel, type LogItem } from "./ui/LogPanel";
 import type { ReaderHandle } from "./ui/ReaderView";
 import { createShelfSessionMemory, ShelfView } from "./ui/ShelfView";
+import { runPageTransition } from "./ui/pageTransition";
+import { ReadingLetterView } from "./ui/readingLetter/ReadingLetterView";
+import { useReadingActivityTracker } from "./ui/readingLetter/useReadingActivityTracker";
+import { readLetterPreviewOverride, readLetterState, resolveActiveLetter, type ActiveLetterDescriptor } from "./ui/readingLetter/letterSchedule";
+import { readReadingLog } from "./ui/readingLetter/readingLogStore";
 import { ReaderReturnControl } from "./ui/ReaderReturnControl";
 import { applyDocumentTheme, documentThemeAttributes, useThemeTransition } from "./ui/themeTransitionHost";
 import { useReadingInputStart } from "./ui/readerPointerEdge";
@@ -2136,6 +2141,34 @@ export default function App() {
     },
   });
   const libraryServices = shelfSpaces.space.policy.libraryServices;
+  const activeReadingEntry = useMemo(
+    () => (view === "reader" && currentShelfId ? (shelfEntries.find((e) => e.id === currentShelfId) ?? null) : null),
+    [view, currentShelfId, shelfEntries],
+  );
+  useReadingActivityTracker({
+    active: view === "reader",
+    libraryServices,
+    entry: activeReadingEntry,
+  });
+  const [activeLetter, setActiveLetter] = useState<ActiveLetterDescriptor | null>(null);
+  const [letterRefreshTick, setLetterRefreshTick] = useState(0);
+  const pendingLetter = useMemo(() => {
+    if (!libraryServices || view !== "shelf") return null;
+    return resolveActiveLetter(new Date(), readLetterState(), readReadingLog(), shelfEntries, readLetterPreviewOverride());
+  }, [libraryServices, view, shelfEntries, letterRefreshTick]);
+  useEffect(() => {
+    if ((!libraryServices || view === "reader") && activeLetter) setActiveLetter(null);
+  }, [libraryServices, view, activeLetter]);
+  const handleOpenReadingLetter = useCallback(() => {
+    if (!pendingLetter) return;
+    void runPageTransition("forward", () => setActiveLetter(pendingLetter));
+  }, [pendingLetter]);
+  const handleCloseReadingLetter = useCallback(() => {
+    void runPageTransition("back", () => {
+      setActiveLetter(null);
+      setLetterRefreshTick((n) => n + 1);
+    });
+  }, []);
   const shelfSpacesLeaveRef = useRef(shelfSpaces.leave);
   shelfSpacesLeaveRef.current = shelfSpaces.leave;
 
@@ -2272,6 +2305,10 @@ export default function App() {
       void handleBackToShelf();
       return;
     }
+    if (activeLetter) {
+      handleCloseReadingLetter();
+      return;
+    }
     if (view === "shelf") {
       if (shelfBackHandlerRef.current?.()) {
         clearExitBackHint();
@@ -2295,11 +2332,14 @@ export default function App() {
     responsive.imeBottom,
     saveFileExportSetup,
     saveFileJob.active,
+    activeLetter,
+    handleCloseReadingLetter,
     view,
   ]);
 
   useAndroidBack(
     runtime.usesAndroidBack && (
+      activeLetter !== null ||
       view === "reader" ||
       view === "shelf" ||
       foreground.kind !== "none" ||
@@ -2764,7 +2804,16 @@ export default function App() {
         />
       )}
       <div className="main">
-        {view === "shelf" ? (
+        {view === "shelf" && activeLetter ? (
+          <ReadingLetterView
+            letter={activeLetter}
+            entries={shelfEntries}
+            thumbnailProvider={shelfThumbnailProvider}
+            platform={runtime.platform}
+            onBack={handleCloseReadingLetter}
+            onNotice={(text) => setShelfNotice({ kind: "ok", text })}
+          />
+        ) : view === "shelf" ? (
           <div className="shelf-stack">
             {shelfError && (
               <div className="shelf-error" role="alert">
@@ -2860,6 +2909,7 @@ export default function App() {
                   ? undefined
                   : () => void handleLegacyImportArchive()
               }
+              readingLetterSlip={libraryServices && pendingLetter ? { letter: pendingLetter, onOpen: handleOpenReadingLetter } : undefined}
               thumbnailProvider={shelfThumbnailProvider}
               searchMode={libraryServices ? shelfSearchMode : "metadata"}
               onSearchModeChange={libraryServices ? handleShelfSearchModeChange : undefined}
