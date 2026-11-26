@@ -20,7 +20,6 @@ import {
   markLetterOpened,
   saveAnnualChoice,
   type ActiveLetterDescriptor,
-  type LetterPreviewMode,
   type ReadingLetterState,
 } from "./letterSchedule";
 import { ReadingLetterAnnualBody } from "./ReadingLetterAnnualBody";
@@ -35,10 +34,10 @@ import "./readingLetter.css";
 
 export interface ReadingLetterViewProps {
   letter: ActiveLetterDescriptor;
+  paper: LetterPaperTone;
   log: ReadingLogData;
   letterState: ReadingLetterState;
   onLetterStateChange(next: ReadingLetterState): void;
-  onPreviewModeChange?(mode: LetterPreviewMode): void;
   entries: readonly ShelfEntry[];
   thumbnailProvider?: ThumbnailProvider;
   platform: AppPlatform;
@@ -53,10 +52,10 @@ function isReducedMotion(): boolean {
 
 export function ReadingLetterView({
   letter,
+  paper,
   log,
   letterState,
   onLetterStateChange,
-  onPreviewModeChange,
   entries,
   thumbnailProvider,
   platform,
@@ -70,7 +69,6 @@ export function ReadingLetterView({
   );
   const [opening, setOpening] = useState(false);
   const [unfolding, setUnfolding] = useState(letter.alreadyOpenedToday);
-  const [paper, setPaper] = useState<LetterPaperTone>(() => letterState.paperTone ?? "paper");
 
   const [hideDuration, setHideDuration] = useState(false);
   const [includeRhythm, setIncludeRhythm] = useState(true);
@@ -119,11 +117,6 @@ export function ReadingLetterView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [keepsake, onBack]);
-
-  const updatePaper = (next: LetterPaperTone) => {
-    setPaper(next);
-    onLetterStateChange({ ...letterState, paperTone: next });
-  };
 
   const handleUnwrap = () => {
     if (opening) return;
@@ -293,39 +286,6 @@ export function ReadingLetterView({
 
   return (
     <div className="reading-letter-page" data-paper={paper}>
-      <nav className="rl-topbar" aria-label={t("readingLetter.env.monthlyBrand")}>
-        <button className="rl-btn ghost" type="button" onClick={onBack}>
-          {t("readingLetter.nav.back")}
-        </button>
-        <div className="rl-pills" role="group">
-          {letter.isPreview && onPreviewModeChange && (["monthly", "annual", "empty"] as const).map((mode) => {
-            const active = mode === "empty" ? isPreviewEmpty : mode === "annual" ? letter.kind === "annual" : letter.kind === "monthly" && !isPreviewEmpty;
-            return (
-              <button
-                key={mode}
-                type="button"
-                className="rl-pill"
-                aria-pressed={active}
-                onClick={() => onPreviewModeChange(mode)}
-              >
-                {t(`readingLetter.preview.${mode}`)}
-              </button>
-            );
-          })}
-          {(["paper", "sepia", "night"] as const).map((tone) => (
-            <button
-              key={tone}
-              type="button"
-              className="rl-pill"
-              aria-pressed={paper === tone}
-              onClick={() => updatePaper(tone)}
-            >
-              {t(`readingLetter.tone.${tone}`)}
-            </button>
-          ))}
-        </div>
-      </nav>
-
       <div className="rl-stage">
         {stage === "envelope" ? (
           <section className={`rl-envelope${opening ? " is-opening" : ""}`}>

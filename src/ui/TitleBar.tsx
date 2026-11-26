@@ -12,13 +12,15 @@ function isTauriEnv(): boolean {
 }
 
 export interface TitleBarProps {
-  view: "shelf" | "reader";
+  view: "shelf" | "reader" | "letter";
   title?: string;
   /** Desktop: shown after the book title (the chapter lives in the progress capsule). */
   author?: string;
   /** Contents name of the current place; the capsule shows it, the phone bar shows it after the title. */
   chapterTitle?: string;
   onBackToShelf?: () => void;
+  /** Optional actions rendered on the right before window controls (used by the full-page letter view). */
+  extraActions?: React.ReactNode;
   /** 侧边栏开关（综合目录/书签/笔记抽屉） */
   onToggleSidebar?: (side?: "left" | "right") => void;
   sidebarOpen?: boolean;
@@ -108,6 +110,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   historyBackLabel,
   historyForwardLabel,
   readerTabs,
+  extraActions,
 }) => {
   const { t } = useUiText();
   const appName = `${t("titlebar.appName")}${IS_AI_EDITION ? " AI" : ""}`;
@@ -287,7 +290,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
   // 沉浸隐藏判定：处于阅读模式且开启 zenMode，且无子菜单打开，且未主动唤出时隐藏
   const isZenHidden = desktopTools && view === "reader" && zenMode && !isAnyMenuOpen && !isZenRevealed;
-  const isMobileToolsHidden = mobileCompact && !toolsVisible;
+  const isMobileToolsHidden = mobileCompact && view === "reader" && !toolsVisible;
 
   // 桌面：书名 · 作者（章名在中间的进度胶囊）；触屏顶栏没有胶囊：书名下面一行写章名。
   const bookMeta = (
@@ -349,7 +352,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               </svg>
             </button>
           )}
-          {view === "reader" && onBackToShelf && (
+          {(view === "reader" || view === "letter") && onBackToShelf && (
             <button
               type="button"
               className="titlebar-btn-pill titlebar-back-btn"
@@ -580,6 +583,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 </button>
               )}
             </div>
+          )}
+
+          {view === "letter" && extraActions && (
+            <div className="titlebar-actions">{extraActions}</div>
           )}
 
           {/* 窗口三联按键（仅在 Tauri 桌面原生环境中渲染） */}

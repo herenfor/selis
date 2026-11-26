@@ -119,6 +119,7 @@ import { LogPanel, type LogItem } from "./ui/LogPanel";
 import type { ReaderHandle } from "./ui/ReaderView";
 import { createShelfSessionMemory, ShelfView } from "./ui/ShelfView";
 import { ReadingLetterView } from "./ui/readingLetter/ReadingLetterView";
+import { paperToneForAppTheme, ReadingLetterPreviewSwitch } from "./ui/readingLetter/ReadingLetterTitlePreview";
 import { useReadingLetterHost } from "./ui/readingLetter/useReadingLetterHost";
 import { ReaderReturnControl } from "./ui/ReaderReturnControl";
 import { applyDocumentTheme, documentThemeAttributes, useThemeTransition } from "./ui/themeTransitionHost";
@@ -2637,6 +2638,13 @@ export default function App() {
     resolve?.(choice);
   }, []);
 
+  const activeLetter = view === "shelf" ? readingLetter.activeLetter : null;
+  const letterTitle = activeLetter
+    ? (activeLetter.kind === "annual"
+        ? t("readingLetter.common.yearHeading", { year: activeLetter.year })
+        : t("readingLetter.common.yearMonthHeading", { year: activeLetter.year, month: activeLetter.month ?? 1 }))
+    : "";
+
   return (
     <div
       ref={appRootRef}
@@ -2658,18 +2666,21 @@ export default function App() {
       } as CSSProperties}
     >
       <TitleBar
-        view={view}
-        title={view === "reader" ? (ready ? book!.metadata.title : (book?.metadata.title ?? "")) : `${t("appUi.appName")}${IS_AI_EDITION ? " AI" : ""}`}
+        view={activeLetter ? "letter" : view}
+        title={activeLetter ? letterTitle : view === "reader" ? (ready ? book!.metadata.title : (book?.metadata.title ?? "")) : `${t("appUi.appName")}${IS_AI_EDITION ? " AI" : ""}`}
         author={view === "reader" && ready ? book!.metadata.creator : undefined}
         chapterTitle={view === "reader" && ready ? currentChapterLabel : undefined}
-        onBackToShelf={view === "reader" ? handleBackToShelf : undefined}
+        onBackToShelf={activeLetter ? readingLetter.closeLetter : view === "reader" ? handleBackToShelf : undefined}
+        extraActions={activeLetter?.isPreview ? (
+          <ReadingLetterPreviewSwitch letter={activeLetter} onSelect={readingLetter.switchPreviewMode} />
+        ) : undefined}
         readerTabs={view === "reader" ? readerTabStrip : undefined}
         onToggleSidebar={view === "reader" ? handleToggleSidebar : undefined}
         sidebarOpen={view === "reader" && isSidebarOpen}
         // 触摸设备（手机与平板）共用同一阅读顶栏，随 toolsVisible 一起显隐；
         // 平板不再叠加桌面工具栏。自带窗口外壳的桌面触屏仍保留窗口按键。
         mobileCompact={phoneChrome || (mobileChrome && !runtime.hasDesktopWindowChrome)}
-        toolsVisible={readerToolsVisible}
+        toolsVisible={activeLetter ? true : readerToolsVisible}
         onToggleAppearance={view === "reader" ? toggleAppearancePanel : undefined}
         appearanceOpen={view === "reader" && menuOpen}
         onOpenSearch={
@@ -2773,14 +2784,14 @@ export default function App() {
         />
       )}
       <div className="main">
-        {view === "shelf" && readingLetter.activeLetter ? (
+        {activeLetter ? (
           <ReadingLetterView
-            key={readingLetter.activeLetter.periodKey}
-            letter={readingLetter.activeLetter}
+            key={activeLetter.periodKey}
+            letter={activeLetter}
+            paper={paperToneForAppTheme(appThemeAttributes.theme, appThemeAttributes.tone)}
             log={readingLetter.log}
             letterState={readingLetter.letterState}
             onLetterStateChange={readingLetter.updateLetterState}
-            onPreviewModeChange={readingLetter.switchPreviewMode}
             entries={shelfEntries}
             thumbnailProvider={shelfThumbnailProvider}
             platform={runtime.platform}
