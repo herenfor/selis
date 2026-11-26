@@ -337,6 +337,18 @@ describe("CSD TitleBar 组件与样式契约（Zen UI Packet A）", () => {
       }));
       expect(webHtml).toContain("titlebar-letter");
       expect(webHtml).toContain("titlebar-back-btn");
+
+      const mobileHtml = renderToStaticMarkup(createElement(TitleBar, {
+        view: "letter",
+        mobileCompact: true,
+        toolsVisible: false,
+        title: "2026年10月",
+        onBackToShelf: () => {},
+      }));
+      expect(mobileHtml).toContain("titlebar-letter");
+      expect(mobileHtml).toContain("is-mobile-compact");
+      expect(mobileHtml).toContain("titlebar-back-btn");
+      expect(mobileHtml).not.toContain("tools-hidden");
     } finally {
       vi.unstubAllGlobals();
     }

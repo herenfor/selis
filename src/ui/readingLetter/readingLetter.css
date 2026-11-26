@@ -100,7 +100,7 @@
   color: var(--rl-ink);
   overflow-x: hidden;
   overflow-y: auto;
-  padding-bottom: 36px;
+  padding-bottom: calc(36px + env(safe-area-inset-bottom, 0px));
 }
 
 .reading-letter-page[data-paper="sepia"] {
@@ -155,6 +155,11 @@
   background: color-mix(in srgb, var(--btn-tint) 85%, transparent);
   color: var(--fg);
   font-weight: 500;
+}
+
+.app[data-touch-ui="true"] .rl-titlebar-preview-btn {
+  min-height: 32px;
+  padding: 0 9px;
 }
 
 .rl-stage {
@@ -915,6 +920,7 @@
 .rl-modal-foot {
   border-bottom: 0;
   border-top: var(--hairline) solid var(--rl-line);
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
 .rl-modal-body {
@@ -952,6 +958,9 @@
 }
 
 @media (max-width: 640px) {
+  .rl-stage { padding: 8px 8px 20px; }
+  .rl-sheet { padding: 20px 16px; }
+  .rl-env-body { padding: 14px 18px 28px; }
   .rl-year-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rl-mosaic { aspect-ratio: 1.45; }
   .rl-day { min-height: 50px; }
