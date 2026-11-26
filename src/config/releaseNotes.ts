@@ -35,6 +35,37 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.9",
+    status: "released",
+    releasedOn: "2026-11-26",
+    items: [
+      {
+        category: "improved",
+        text: "书籍联网与 JavaScript 执行开关会记住最后一次选择：开启过一次后，之后打开的书默认开启；关闭同样记住，可随时在阅读设置里改回来。",
+      },
+      {
+        category: "fixed",
+        text: "调整窗口大小、固定目录或折叠/展开侧栏后，正文会重新排版，不再出现右侧或底部文字被裁切；翻页动画进行中缩放窗口，动画落定后也会补一次重排。",
+      },
+      {
+        category: "fixed",
+        text: "开启 JavaScript 执行后，书里的 <noscript> 和 <canvas> 回退内容不再显示；关闭时，<noscript> 里的远程图片仍能正常加载。",
+      },
+      {
+        category: "fixed",
+        text: "超宽表格、图片和固定宽度的块不再把正文挤出页面；窄屏配合大字号时不再误分页。",
+      },
+      {
+        category: "fixed",
+        text: "书架搜索框和侧边栏目录筛选框只显示一个清除按钮，不再出现两个 X。",
+      },
+      {
+        category: "fixed",
+        text: "SVG 图片加载完成后会触发重排，图片尺寸变化不再留下空白或错位。",
+      },
+    ],
+  },
+  {
     version: "0.4.8",
     status: "released",
     releasedOn: "2026-11-25",
