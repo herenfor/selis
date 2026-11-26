@@ -922,6 +922,13 @@ impl PortableStore {
         &self.runtime_generation
     }
 
+    pub(crate) fn with_connection_mut<T>(
+        &mut self,
+        work: impl FnOnce(&mut Connection) -> PortableResult<T>,
+    ) -> PortableResult<T> {
+        work(&mut self.connection)
+    }
+
     /// All live folder positions. Scan captures this once for the import
     /// preview; target checks are a local job concern and never portable data.
     pub fn directory_target_snapshots(

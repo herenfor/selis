@@ -73,8 +73,9 @@
   padding: 0 0 0 16px;
 }
 
-/* 阅读器视图 */
-.titlebar-reader {
+/* 阅读器视图与独立阅读来信视图 */
+.titlebar-reader,
+.titlebar-letter {
   padding: 0 0 0 10px;
 }
 
@@ -695,4 +696,21 @@
 .app[data-shell="mobile"] .titlebar.is-mobile-compact {
   height: var(--mobile-reader-topbar, 56px);
   padding: 0 6px 0 8px;
+}
+
+/* 手机阅读来信顶栏参与正常流式布局并承接状态栏安全区，避免固定覆盖遮挡信纸信头。 */
+.titlebar.titlebar-letter.is-mobile-compact,
+.app[data-shell="mobile"] .titlebar.titlebar-letter.is-mobile-compact {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  height: calc(var(--mobile-reader-topbar, 56px) + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 8px 0 8px;
+  box-shadow: none;
+}
+
+.titlebar.titlebar-letter.is-mobile-compact .titlebar-left {
+  max-width: none;
+  flex: 1 1 auto;
 }

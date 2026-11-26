@@ -43,6 +43,8 @@ import { shelfReadingStatus } from "./shelfProgressDisplay";
 import type { CustomThemeControls } from "./useCustomThemes";
 import { isShelfCardActionTarget } from "./shelfCardEventScope";
 import { getRuntimeCapabilities } from "../platform/runtimeCapabilities";
+import { ShelfLetterSlip } from "./readingLetter/ShelfLetterSlip";
+import type { ActiveLetterDescriptor } from "./readingLetter/letterSchedule";
 import type { ReaderTapPreferences } from "./readerTapRegions";
 import type { ReaderTapRegionSettings } from "./readerTapRouting";
 import { ShelfSettingsPage, type ShelfSettingsPageProps, type ShelfSettingsSection } from "./ShelfSettingsPage";
@@ -328,6 +330,8 @@ export interface ShelfViewProps {
   registerBackHandler?(handler: (() => boolean) | null): void;
   /** 书架是否存在可被 Back 消费的前景层，供 App 决定是否接管系统 Back。 */
   onBackAvailabilityChange?(active: boolean): void;
+  /** Optional non-intrusive Option B Reading Letter slip for the normal library shelf. */
+  readingLetterSlip?: { letter: ActiveLetterDescriptor; onOpen(): void };
 }
 
 /* =========================================================================
@@ -2570,6 +2574,13 @@ export function ShelfView(props: ShelfViewProps) {
         registerSubmenuBackHandler={registerSubmenuBackHandler}
         onSubmenuBackActiveChange={reportSubmenuBackActive}
       />
+
+      {props.libraryServices && props.readingLetterSlip && (
+        <ShelfLetterSlip
+          letter={props.readingLetterSlip.letter}
+          onOpen={props.readingLetterSlip.onOpen}
+        />
+      )}
 
       {/* Level 3: 状态与分类胶囊轨 */}
       <nav className="shelf-nav-rail" aria-label={t("shelfMain.nav")}>

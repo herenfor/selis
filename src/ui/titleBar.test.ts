@@ -309,4 +309,48 @@ describe("CSD TitleBar 组件与样式契约（Zen UI Packet A）", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("阅读来信视图渲染返回书架按钮、标题与可选右侧预览区，并在非 Tauri 下同样保留返回栏", () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    try {
+      const html = renderToStaticMarkup(createElement(TitleBar, {
+        view: "letter",
+        title: "2026年10月",
+        onBackToShelf: () => {},
+        extraActions: createElement("div", { className: "rl-titlebar-preview" }, "preview"),
+      }));
+      expect(html).toContain("titlebar-letter");
+      expect(html).toContain("titlebar-back-btn");
+      expect(html).toContain("2026年10月");
+      expect(html).toContain("rl-titlebar-preview");
+      expect(html).toContain("titlebar-controls");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    vi.stubGlobal("window", {});
+    try {
+      const webHtml = renderToStaticMarkup(createElement(TitleBar, {
+        view: "letter",
+        title: "2026年10月",
+        onBackToShelf: () => {},
+      }));
+      expect(webHtml).toContain("titlebar-letter");
+      expect(webHtml).toContain("titlebar-back-btn");
+
+      const mobileHtml = renderToStaticMarkup(createElement(TitleBar, {
+        view: "letter",
+        mobileCompact: true,
+        toolsVisible: false,
+        title: "2026年10月",
+        onBackToShelf: () => {},
+      }));
+      expect(mobileHtml).toContain("titlebar-letter");
+      expect(mobileHtml).toContain("is-mobile-compact");
+      expect(mobileHtml).toContain("titlebar-back-btn");
+      expect(mobileHtml).not.toContain("tools-hidden");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

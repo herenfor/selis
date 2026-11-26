@@ -31,6 +31,7 @@ mod reader_search;
 pub(crate) mod transfer_policy;
 mod portable_state_commands;
 mod private_shelf;
+mod reading_letter;
 mod save_file;
 mod readest_import;
 mod koreader_import;
@@ -164,6 +165,10 @@ macro_rules! configure_invoke_handler {
             portable_state_commands::portable_state_apply_organization,
             portable_state_commands::portable_state_merge_organization,
             portable_state_commands::portable_state_reserve_stamps,
+            reading_letter::reading_letter_load,
+            reading_letter::reading_letter_record_delta,
+            reading_letter::reading_letter_mark_finished,
+            reading_letter::reading_letter_save_state,
             readest_import::readest_backup_open,
             readest_import::readest_backup_config,
             readest_import::readest_backup_read,
@@ -375,6 +380,10 @@ macro_rules! configure_invoke_handler {
             portable_state_commands::portable_state_apply_organization,
             portable_state_commands::portable_state_merge_organization,
             portable_state_commands::portable_state_reserve_stamps,
+            reading_letter::reading_letter_load,
+            reading_letter::reading_letter_record_delta,
+            reading_letter::reading_letter_mark_finished,
+            reading_letter::reading_letter_save_state,
             readest_import::readest_backup_open,
             readest_import::readest_backup_config,
             readest_import::readest_backup_read,

@@ -22,6 +22,7 @@ Each component remains subject to its respective license.
 | pixi.js (AI experimental avatar only) | 6.5.10 | MIT | https://github.com/pixijs/pixijs |
 | pixi-live2d-display (AI experimental avatar only) | 0.4.0 | MIT; bundled Cubism framework has its own license | https://github.com/guansss/pixi-live2d-display |
 | qrcode | 1.5.4 | MIT | https://github.com/soldair/node-qrcode |
+| LXGW WenKai Lite (subsetted WOFF2 under `src/assets/fonts/`) | 1.530 | SIL OFL 1.1 | https://github.com/lxgw/LxgwWenKai-Lite |
 | @tauri-apps/api | 2.11.1 | MIT OR Apache-2.0 | https://github.com/tauri-apps/tauri |
 | @tauri-apps/plugin-dialog | 2.7.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
 | @tauri-apps/plugin-fs | 2.5.1 | MIT OR Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |

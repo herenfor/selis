@@ -158,7 +158,7 @@ pub(crate) fn with_existing_store<R: Runtime, T>(
     }
 }
 
-fn with_store<R: Runtime, T>(
+pub(crate) fn with_store<R: Runtime, T>(
     app: &AppHandle<R>,
     manager: &State<'_, PortableStateManager>,
     work: impl FnOnce(&mut PortableStore) -> PortableResult<T>,
