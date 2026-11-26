@@ -97,5 +97,9 @@
   "readingLetter.keepsake.copiedNotice": "Keepsake image copied to clipboard.",
   "readingLetter.keepsake.savedNotice": "Keepsake image saved.",
   "readingLetter.keepsake.galleryNotice": "Saved to Photos.",
-  "readingLetter.keepsake.failedNotice": "Could not render or save the keepsake image."
+  "readingLetter.keepsake.failedNotice": "Could not render or save the keepsake image.",
+
+  "readingLetter.preview.monthly": "Monthly",
+  "readingLetter.preview.annual": "Annual",
+  "readingLetter.preview.empty": "Empty"
 }

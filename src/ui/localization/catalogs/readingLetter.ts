@@ -100,4 +100,8 @@ export const readingLetter = defineMessages("readingLetter", {
   "readingLetter.keepsake.savedNotice": "留存长信已保存。",
   "readingLetter.keepsake.galleryNotice": "已保存到系统相册。",
   "readingLetter.keepsake.failedNotice": "生成或保存长信图片时遇到问题。",
+
+  "readingLetter.preview.monthly": "月信",
+  "readingLetter.preview.annual": "年信",
+  "readingLetter.preview.empty": "留白",
 });

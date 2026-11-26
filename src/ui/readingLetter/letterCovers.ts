@@ -26,6 +26,11 @@ export function bookClothToneForKey(key: string): BookClothTone {
   return BOOK_CLOTH_PALETTE[(hash >>> 0) % BOOK_CLOTH_PALETTE.length];
 }
 
+export interface LetterCoverSubject {
+  bookKey: string;
+  entry?: ShelfEntry;
+}
+
 export interface LoadedLetterCover {
   url: string;
   image: HTMLImageElement | null;
@@ -45,15 +50,13 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
  * in the open Reading Letter, revoking every object URL when unmounted.
  */
 export function useLetterCovers(
-  entries: readonly (ShelfEntry | undefined)[],
-  bookKeys: readonly string[],
+  subjects: readonly LetterCoverSubject[],
   provider: ThumbnailProvider | undefined,
 ): ReadonlyMap<string, LoadedLetterCover> {
   const [covers, setCovers] = useState<Map<string, LoadedLetterCover>>(() => new Map());
-  const keySignature = bookKeys.join("|");
 
   useEffect(() => {
-    if (!provider || entries.length === 0) {
+    if (!provider || subjects.length === 0) {
       setCovers(new Map());
       return;
     }
@@ -63,11 +66,9 @@ export function useLetterCovers(
     void (async () => {
       const next = new Map<string, LoadedLetterCover>();
       const seen = new Set<string>();
-      for (let i = 0; i < bookKeys.length; i++) {
-        const key = bookKeys[i];
-        const entry = entries[i];
-        if (!key || !entry || seen.has(key)) continue;
-        seen.add(key);
+      for (const { bookKey, entry } of subjects) {
+        if (!bookKey || !entry || seen.has(bookKey)) continue;
+        seen.add(bookKey);
         try {
           const desc = descriptorForEntry(entry);
           const asset = (await provider.readCachedThumbnail(desc)) ?? (await provider.readSourceCover(desc));
@@ -78,7 +79,7 @@ export function useLetterCovers(
           createdUrls.push(url);
           const image = await loadImage(url);
           if (cancelled) continue;
-          next.set(key, { url, image });
+          next.set(bookKey, { url, image });
         } catch {
           /* fall back cleanly to typographic bookplate cover */
         }
@@ -90,7 +91,7 @@ export function useLetterCovers(
       cancelled = true;
       for (const url of createdUrls) URL.revokeObjectURL(url);
     };
-  }, [provider, keySignature]);
+  }, [provider, subjects]);
 
   return covers;
 }

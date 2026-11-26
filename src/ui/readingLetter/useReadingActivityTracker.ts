@@ -2,13 +2,10 @@ import { useEffect, useRef } from "react";
 import type { ShelfEntry } from "../shelf/types";
 import {
   bookKeyForEntry,
-  markBookFinishedInLog,
   MAX_DELTA_SECONDS,
   MIN_DELTA_SECONDS,
-  readReadingLog,
-  recordReadingDelta,
-  writeReadingLog,
 } from "./readingLogStore";
+import { markReadingBookFinished, recordReadingActivityDelta } from "./readingLetterStorage";
 
 const FLUSH_INTERVAL_MS = 30_000;
 const IDLE_CUTOFF_MS = MAX_DELTA_SECONDS * 1000;
@@ -68,7 +65,7 @@ export function useReadingActivityTracker({ active, libraryServices, entry }: Re
       if (clamped < MIN_DELTA_SECONDS) return;
 
       session.sessionSeconds += clamped;
-      const nextLog = recordReadingDelta(readReadingLog(), {
+      void recordReadingActivityDelta({
         bookKey: session.bookKey,
         title: session.title,
         creator: session.creator,
@@ -76,7 +73,6 @@ export function useReadingActivityTracker({ active, libraryServices, entry }: Re
         sessionSeconds: session.sessionSeconds,
         now: new Date(flushMs),
       });
-      writeReadingLog(nextLog);
     };
 
     const bumpActivity = () => {
@@ -118,9 +114,7 @@ export function useReadingActivityTracker({ active, libraryServices, entry }: Re
       sessionRef.current.lastActivityMs = Date.now();
     }
     if (entryProgress >= 99) {
-      const current = readReadingLog();
-      const updated = markBookFinishedInLog(current, entryKey, entryTitle, entryCreator, new Date());
-      if (updated !== current) writeReadingLog(updated);
+      void markReadingBookFinished(entryKey, entryTitle, entryCreator, new Date());
     }
   }, [active, libraryServices, entryKey, entryTitle, entryCreator, entryProgress, entry?.spineIndex, entry?.page]);
 }

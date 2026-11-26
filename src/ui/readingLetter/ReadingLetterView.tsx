@@ -18,23 +18,27 @@ import { formatReadingDuration } from "./letterFormat";
 import { renderReadingLetterPngBlob, type LetterPaperTone } from "./letterKeepsakeRenderer";
 import {
   markLetterOpened,
-  readLetterState,
   saveAnnualChoice,
-  writeLetterState,
   type ActiveLetterDescriptor,
+  type LetterPreviewMode,
+  type ReadingLetterState,
 } from "./letterSchedule";
 import { ReadingLetterAnnualBody } from "./ReadingLetterAnnualBody";
 import { ReadingLetterMonthlyBody } from "./ReadingLetterMonthlyBody";
 import {
   buildAnnualLetterData,
   buildMonthlyLetterData,
-  readReadingLog,
   type LetterExcerpt,
+  type ReadingLogData,
 } from "./readingLogStore";
 import "./readingLetter.css";
 
 export interface ReadingLetterViewProps {
   letter: ActiveLetterDescriptor;
+  log: ReadingLogData;
+  letterState: ReadingLetterState;
+  onLetterStateChange(next: ReadingLetterState): void;
+  onPreviewModeChange?(mode: LetterPreviewMode): void;
   entries: readonly ShelfEntry[];
   thumbnailProvider?: ThumbnailProvider;
   platform: AppPlatform;
@@ -49,6 +53,10 @@ function isReducedMotion(): boolean {
 
 export function ReadingLetterView({
   letter,
+  log,
+  letterState,
+  onLetterStateChange,
+  onPreviewModeChange,
   entries,
   thumbnailProvider,
   platform,
@@ -56,8 +64,6 @@ export function ReadingLetterView({
   onNotice,
 }: ReadingLetterViewProps) {
   const { t } = useUiText();
-  const [letterState, setLetterState] = useState(() => readLetterState());
-  const log = useMemo(() => readReadingLog(), [letter.periodKey]);
 
   const [stage, setStage] = useState<"envelope" | "unfolded">(() =>
     letter.alreadyOpenedToday ? "unfolded" : "envelope",
@@ -96,11 +102,7 @@ export function ReadingLetterView({
     return allMonthModel.books.map((b) => ({ bookKey: b.bookKey, entry: b.entry }));
   }, [letter.kind, annualModel, allMonthModel]);
 
-  const covers = useLetterCovers(
-    coverSubjects.map((s) => s.entry),
-    coverSubjects.map((s) => s.bookKey),
-    thumbnailProvider,
-  );
+  const covers = useLetterCovers(coverSubjects, thumbnailProvider);
 
   useEffect(() => {
     return () => {
@@ -120,18 +122,15 @@ export function ReadingLetterView({
 
   const updatePaper = (next: LetterPaperTone) => {
     setPaper(next);
-    const updated = { ...letterState, paperTone: next };
-    setLetterState(updated);
-    writeLetterState(updated);
+    onLetterStateChange({ ...letterState, paperTone: next });
   };
 
   const handleUnwrap = () => {
     if (opening) return;
     const finish = () => {
-      const nextState = letter.isPreview ? letterState : markLetterOpened(letterState, letter.periodKey, new Date());
-      if (nextState !== letterState) {
-        setLetterState(nextState);
-        writeLetterState(nextState);
+      if (!letter.isPreview) {
+        const nextState = markLetterOpened(letterState, letter.periodKey, new Date());
+        if (nextState !== letterState) onLetterStateChange(nextState);
       }
       setOpening(false);
       setUnfolding(true);
@@ -159,9 +158,7 @@ export function ReadingLetterView({
 
   const updateAnnualChoice = (nextBookKey: string | null, nextEpigraph: string) => {
     const key = nextBookKey ?? annualModel.featuredBooks[0]?.bookKey ?? "";
-    const nextState = saveAnnualChoice(letterState, letter.year, { bookKey: key, epigraph: nextEpigraph });
-    setLetterState(nextState);
-    writeLetterState(nextState);
+    onLetterStateChange(saveAnnualChoice(letterState, letter.year, { bookKey: key, epigraph: nextEpigraph }));
   };
 
   const stampDate = `${letter.deliveryDate.getFullYear()}.${String(letter.deliveryDate.getMonth() + 1).padStart(2, "0")}.${String(letter.deliveryDate.getDate()).padStart(2, "0")}`;
@@ -301,6 +298,20 @@ export function ReadingLetterView({
           {t("readingLetter.nav.back")}
         </button>
         <div className="rl-pills" role="group">
+          {letter.isPreview && onPreviewModeChange && (["monthly", "annual", "empty"] as const).map((mode) => {
+            const active = mode === "empty" ? isPreviewEmpty : mode === "annual" ? letter.kind === "annual" : letter.kind === "monthly" && !isPreviewEmpty;
+            return (
+              <button
+                key={mode}
+                type="button"
+                className="rl-pill"
+                aria-pressed={active}
+                onClick={() => onPreviewModeChange(mode)}
+              >
+                {t(`readingLetter.preview.${mode}`)}
+              </button>
+            );
+          })}
           {(["paper", "sepia", "night"] as const).map((tone) => (
             <button
               key={tone}

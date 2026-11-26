@@ -97,5 +97,9 @@
   "readingLetter.keepsake.copiedNotice": "留存長信已複製到剪貼簿。",
   "readingLetter.keepsake.savedNotice": "留存長信已保存。",
   "readingLetter.keepsake.galleryNotice": "已保存到系統相簿。",
-  "readingLetter.keepsake.failedNotice": "生成或保存長信圖片時遇到問題。"
+  "readingLetter.keepsake.failedNotice": "生成或保存長信圖片時遇到問題。",
+
+  "readingLetter.preview.monthly": "月信",
+  "readingLetter.preview.annual": "年信",
+  "readingLetter.preview.empty": "留白"
 }

@@ -21,8 +21,12 @@ use std::path::Path;
 //    client must refuse a 7 database rather than interpreting Kindle locations.
 // 8: nested folder parent relations. 7 -> 8 backs up then marks only; a 7 client
 //    must refuse an 8 database rather than dropping parentId and flattening.
-const SCHEMA_VERSION: i64 = 9;
+// 9: offline PDF source metadata and progress anchors.
+// 10: local reading-letter daily activity table (`reading_activity`). 9 -> 10 backs
+//     up via Backup API, adds `reading_activity`, and updates user_version without rewriting rows.
+const SCHEMA_VERSION: i64 = 10;
 const DIRECTORY_TABLE: &str = "directory_bindings";
+const READING_ACTIVITY_TABLE: &str = "reading_activity";
 const TABLES: &[(&str, &str)] = &[
     (
         "book_meta",
@@ -64,6 +68,16 @@ const TABLES: &[(&str, &str)] = &[
         "CREATE TABLE directory_bindings (directory_key TEXT PRIMARY KEY NOT NULL,
                  folder_id TEXT NOT NULL)",
     ),
+    (
+        "reading_activity",
+        "CREATE TABLE reading_activity (date_key TEXT NOT NULL,
+                 book_hash TEXT NOT NULL,
+                 seconds INTEGER NOT NULL,
+                 hours_json TEXT NOT NULL,
+                 first_minute INTEGER,
+                 last_minute INTEGER,
+                 PRIMARY KEY (date_key, book_hash))",
+    ),
 ];
 
 fn normalized_ddl(sql: &str) -> String {
@@ -100,19 +114,20 @@ pub(super) fn initialize(connection: &mut Connection) -> PortableResult<()> {
         rows.collect::<Result<Vec<_>, _>>()?
     };
     let fresh = version == 0 && objects.is_empty();
-    let known = (objects.len() == TABLES.len()
-        || (version == 0 && objects.len() == TABLES.len() - 1))
+    let has_directory = objects.iter().any(|(name, _, _)| name == DIRECTORY_TABLE);
+    let has_reading_activity = objects.iter().any(|(name, _, _)| name == READING_ACTIVITY_TABLE);
+    let missing_optional = usize::from(!has_directory && version == 0)
+        + usize::from(!has_reading_activity && version < SCHEMA_VERSION);
+    let known = objects.len() == TABLES.len() - missing_optional
         && objects.iter().all(|(name, kind, sql)| {
             kind == "table"
                 && TABLES.iter().any(|(expected_name, ddl)| {
                     name == expected_name && normalized_ddl(sql) == normalized_ddl(ddl)
                 })
         });
-    let has_directory = objects.iter().any(|(name, _, _)| name == DIRECTORY_TABLE);
     if !fresh
         && (!known
-            || (objects.len() == TABLES.len() - 1 && has_directory)
-            || !matches!(version, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | SCHEMA_VERSION))
+            || !matches!(version, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | SCHEMA_VERSION))
     {
         return Err(PortableError::unrecognized_database_format(
             "本机资料库结构无法识别，原资料已保留",
@@ -128,7 +143,10 @@ pub(super) fn initialize(connection: &mut Connection) -> PortableResult<()> {
         }
     }
     for (name, ddl) in TABLES {
-        if fresh || (!has_directory && *name == DIRECTORY_TABLE) {
+        if fresh
+            || (!has_directory && *name == DIRECTORY_TABLE)
+            || (!has_reading_activity && *name == READING_ACTIVITY_TABLE)
+        {
             transaction.execute_batch(ddl)?;
         }
     }
@@ -216,7 +234,7 @@ mod schema_version_tests {
 
     #[test]
     fn kindle_prior_versions_are_backed_up_without_purging_records() {
-        for prior_version in [2, 3, 4, 5, 6, 7, 8] {
+        for prior_version in [2, 3, 4, 5, 6, 7, 8, 9] {
         let db = TestDb::new();
         let connection = Connection::open(&db.0).unwrap();
         connection
@@ -443,6 +461,13 @@ mod schema_version_tests {
         assert_eq!(
             connection
                 .query_row("SELECT count(*) FROM directory_bindings", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM reading_activity", [], |r| r
                     .get::<_, i64>(0))
                 .unwrap(),
             0
