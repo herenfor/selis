@@ -3,6 +3,7 @@
 [![下载最新版](.github/readme/release.svg)](https://github.com/herenfor/selis/releases/latest)
 ![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%7C%20Android-informational)
 [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-GPL--3.0-blue)](LICENSE)
+[![在爱发电赞助](https://img.shields.io/badge/%E8%B5%9E%E5%8A%A9-%E7%88%B1%E5%8F%91%E7%94%B5-946ce6)](https://afdian.com/a/herenfor)
 
 SeLis 是一款安静的多格式阅读器，支持 Windows 与 Android，可打开 **EPUB** 图书、**TXT** 文本书以及 **CBZ／ZIP** 图片漫画。
 
@@ -24,6 +25,7 @@ SeLis 尊重每本书原有的排版设计：版心宽度、不对称边距、�
 - [路线图](#路线图)
 - [反馈](#反馈)
 - [贡献与致谢](#贡献与致谢)
+- [赞助支持](#赞助支持)
 - [许可](#许可)
 
 ## 支持平台
@@ -193,6 +195,18 @@ bash scripts/build-linux.sh --bundles deb    # 本地 Debian 安装包
 ## 贡献与致谢
 
 - [mcss1314](https://github.com/mcss1314)：**主要测试人员**，感谢持续承担版本测试、复现问题，并提供详细反馈与改进建议。
+
+## 赞助支持
+
+SeLis 是一款免费、开源的阅读器，无广告、无追踪，所有功能均向所有人开放。
+
+如果 SeLis 为你的日常阅读带来了一点安静与便利，且你愿意支持它的持续开发与维护，欢迎通过爱发电赞助本项目：
+
+[![在爱发电赞助 SeLis](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%20SeLis-946ce6?style=for-the-badge)](https://afdian.com/a/herenfor)
+
+- **爱发电**：[https://afdian.com/a/herenfor](https://afdian.com/a/herenfor)
+
+赞助完全自愿。为仓库点亮 Star、向身边的朋友推荐 SeLis，或在 Issues 中提交问题反馈与改进建议，同样是对项目莫大的支持。
 
 ## 许可
 
