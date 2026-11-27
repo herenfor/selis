@@ -204,7 +204,7 @@ export function useReaderSidebar({
 
   const isSidebarOpen =
     view === "reader" &&
-    ((effectiveSidebarMode === "docked" && sidebarPinned && !autoCollapsed) ||
+    ((effectiveSidebarMode === "docked" && sidebarPinned && !autoCollapsed && !dockExiting) ||
       (foreground.kind === "panel" &&
         (foreground.panel === "toc" || foreground.panel === "bookmarks" || foreground.panel === "notes")));
 
@@ -218,10 +218,10 @@ export function useReaderSidebar({
   })();
 
   const isDockedSidebar = view === "reader" && effectiveSidebarMode === "docked" && sidebarPinned;
-  const isDockedSidebarVisible = isDockedSidebar && !autoCollapsed;
+  const isDockedSidebarVisible = isDockedSidebar && !autoCollapsed && !dockExiting;
   // 桌面正文搜索停靠右侧时正文让出位置（宽窗由 CSS 决定），结果和正文同时可见。
   const isDockedSearch = view === "reader" && !mobileChrome && foreground.kind === "panel" && foreground.panel === "search";
-  const singlePageLock = isDockedSidebar && (autoCollapsed || autoCollapsePending || restoreLock);
+  const singlePageLock = isDockedSidebar && !dockExiting && (autoCollapsed || autoCollapsePending || restoreLock);
 
   const clearAutoCollapse = useCallback(() => {
     window.clearTimeout(dockExitTimerRef.current);
@@ -253,20 +253,24 @@ export function useReaderSidebar({
     setSidebarWidthState(clampDockWidth(width));
   }, []);
 
-  // Leaving the docked/reader surface abandons a temporary narrow-window state.
+  // Leaving the docked/reader surface abandons a temporary narrow-window state
+  // and finishes any in-flight drag-collapse so the pin cannot resurrect later.
   useEffect(() => {
-    if (view !== "reader" || !isDockedSidebar) clearAutoCollapse();
-  }, [view, isDockedSidebar, clearAutoCollapse]);
+    if (view !== "reader" || !isDockedSidebar) {
+      if (dockExiting) setSidebarPinned(false);
+      clearAutoCollapse();
+    }
+  }, [view, isDockedSidebar, dockExiting, clearAutoCollapse]);
 
   // A settled narrow window asks for a single-page reflow before the drawer moves.
   useEffect(() => {
-    if (view !== "reader" || !isDockedSidebar || !canDock || resizing || autoCollapseSuppressed ||
-      autoCollapsed || autoCollapsePending || restoreLock) return;
+    if (view !== "reader" || !isDockedSidebar || !canDock || resizing || dockExiting ||
+      autoCollapseSuppressed || autoCollapsed || autoCollapsePending || restoreLock) return;
     if (resolveDockNarrowState({ windowWidth: viewportWidth, dockWidth, collapsed: false }) === "collapse") {
       setAutoCollapsePending(true);
     }
-  }, [viewportWidth, dockWidth, view, isDockedSidebar, canDock, resizing, autoCollapseSuppressed,
-    autoCollapsed, autoCollapsePending, restoreLock]);
+  }, [viewportWidth, dockWidth, view, isDockedSidebar, canDock, resizing, dockExiting,
+    autoCollapseSuppressed, autoCollapsed, autoCollapsePending, restoreLock]);
 
   // Wait for the forced single-page layout to be published before sliding out.
   useEffect(() => {
@@ -336,7 +340,7 @@ export function useReaderSidebar({
     closeForeground();
   }, [closeForeground, canDock, sidebarMode, clearAutoCollapse]);
 
-  /** A drag past the arm line slides the dock out, then releases the pin. */
+  /** A drag past the arm line slides the dock out, then releases the pin without locking single-page layout. */
   const requestDockCollapse = useCallback(() => {
     if (!isDockedSidebar) {
       handleSidebarClose();
@@ -344,16 +348,23 @@ export function useReaderSidebar({
     }
     window.clearTimeout(dockExitTimerRef.current);
     setAutoCollapsePending(false);
-    setAutoCollapsed(true);
+    setAutoCollapsed(false);
+    setRestoreLock(false);
     setDockExiting(true);
     dockExitTimerRef.current = window.setTimeout(() => {
       dockExitTimerRef.current = undefined;
       setDockExiting(false);
       setSidebarPinned(false);
-      setAutoCollapsed(false);
-      closeForeground();
+      if (
+        foregroundRef.current.kind === "panel" &&
+        (foregroundRef.current.panel === "toc" ||
+          foregroundRef.current.panel === "bookmarks" ||
+          foregroundRef.current.panel === "notes")
+      ) {
+        closeForeground();
+      }
     }, 320);
-  }, [isDockedSidebar, handleSidebarClose, closeForeground]);
+  }, [isDockedSidebar, handleSidebarClose, foregroundRef, closeForeground]);
 
   /** 键盘/返回键关闭当前可见层；模态（笔记、分享）先关，笔记先走统一 dirty 确认。 */
   const requestCloseCurrentSurface = useCallback((): void => {
@@ -390,6 +401,7 @@ export function useReaderSidebar({
     if (isSidebarOpen && sidebarSide === targetSide) {
       handleSidebarClose();
     } else {
+      if (dockExiting) clearAutoCollapse();
       setSidebarSide(targetSide);
       if (effectiveSidebarMode === "docked") {
         suppressAutoCollapse();
@@ -398,8 +410,8 @@ export function useReaderSidebar({
         openPanel(sidebarTab);
       }
     }
-  }, [autoCollapsed, clearAutoCollapse, isSidebarOpen, sidebarSide, handleSidebarClose, effectiveSidebarMode,
-    sidebarTab, openPanel, suppressAutoCollapse]);
+  }, [autoCollapsed, dockExiting, clearAutoCollapse, isSidebarOpen, sidebarSide, handleSidebarClose,
+    effectiveSidebarMode, sidebarTab, openPanel, suppressAutoCollapse]);
 
   const handleOpenBookmarks = useCallback(() => {
     if (autoCollapsed) {
@@ -411,6 +423,7 @@ export function useReaderSidebar({
       openPanel("bookmarks");
       return;
     }
+    if (dockExiting) clearAutoCollapse();
     setSidebarSide("right");
     setSidebarTab("bookmarks");
     if (effectiveSidebarMode === "docked") {
@@ -419,12 +432,12 @@ export function useReaderSidebar({
     } else {
       openPanel("bookmarks");
     }
-  }, [autoCollapsed, clearAutoCollapse, effectiveSidebarMode, openPanel, suppressAutoCollapse]);
+  }, [autoCollapsed, dockExiting, clearAutoCollapse, effectiveSidebarMode, openPanel, suppressAutoCollapse]);
 
   return {
     sidebarSide, sidebarNavigationMemory, effectiveSidebarMode,
     isSidebarOpen, activeSidebarTab, isDockedSidebar, isDockedSidebarVisible, isDockedSearch,
-    sidebarWidth: dockWidth, setSidebarWidth, autoCollapsed, singlePageLock,
+    sidebarWidth: dockWidth, setSidebarWidth, autoCollapsed, dockExiting, singlePageLock,
     finishDockRestore, requestDockCollapse,
     handleSidebarTabChange, handleSidebarModeChange, handleSidebarClose,
     requestCloseCurrentSurface, handleToggleSidebar, handleOpenBookmarks,
