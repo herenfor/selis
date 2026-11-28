@@ -5,7 +5,8 @@
     "windows": [
       {
         "label": "main",
-        "title": "SeLis"
+        "title": "SeLis",
+        "visible": true
       }
     ]
   },

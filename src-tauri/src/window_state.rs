@@ -4,12 +4,17 @@
 //! identity are deliberately excluded: restoring those safely differs by
 //! platform (Wayland, for example, does not let a client choose an absolute
 //! window position), while the size alone keeps startup behaviour predictable.
+//!
+//! The desktop window is created hidden so the saved size can be applied
+//! before the first paint. It is always shown by [`restore`], including on the
+//! first run and when reading or applying the saved size fails.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, LogicalSize, Manager, PhysicalSize, WebviewWindow, WindowEvent};
+use tauri::window::Color;
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalSize, Theme, WebviewWindow, WindowEvent};
 
 const STORE_FILE: &str = "window-size.json";
 const SCHEMA_VERSION: u32 = 1;
@@ -37,24 +42,77 @@ struct StoredWindowSize {
     height: u32,
 }
 
-/// Restore the saved size before the event loop starts, then centre the window.
+/// Restore the saved size before showing the window, then centre it.
 ///
 /// There is intentionally no saved position to restore. Centring avoids
 /// resizing from a stale corner when the previous monitor is no longer present.
+/// The window is hidden until this function finishes, so applying the saved
+/// size cannot be observed as a startup resize/flicker.
 pub(crate) fn restore(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    let Some(saved) = read_saved_size(app) else {
-        return;
-    };
-    let size = clamp_dimensions(saved, current_work_area_limit(&window));
-    if window
-        .set_size(LogicalSize::new(size.width, size.height))
-        .is_ok()
-    {
-        let _ = window.center();
+    // The startup placeholder already follows `prefers-color-scheme`; match it
+    // behind the webview so a dark-mode first frame cannot flash white before
+    // the page paints. Best effort: a rejected colour must not block showing.
+    let dark = matches!(window.theme(), Ok(Theme::Dark));
+    let _ = window.set_background_color(Some(startup_background(dark)));
+    restore_window(
+        &TauriRestoreWindow { window: &window },
+        read_saved_size(app),
+    );
+}
+
+/// Background behind the webview before the first paint, matching index.html's
+/// startup placeholder (dark `#1e1e1e`, light `#ffffff`).
+fn startup_background(dark: bool) -> Color {
+    if dark {
+        Color(30, 30, 30, 255)
+    } else {
+        Color(255, 255, 255, 255)
     }
+}
+
+trait RestoreWindow {
+    fn work_area_limit(&self) -> Option<Dimensions>;
+    fn set_size(&self, size: Dimensions) -> bool;
+    fn center(&self);
+    fn show(&self);
+}
+
+struct TauriRestoreWindow<'a> {
+    window: &'a WebviewWindow,
+}
+
+impl RestoreWindow for TauriRestoreWindow<'_> {
+    fn work_area_limit(&self) -> Option<Dimensions> {
+        current_work_area_limit(self.window)
+    }
+
+    fn set_size(&self, size: Dimensions) -> bool {
+        self.window
+            .set_size(LogicalSize::new(size.width, size.height))
+            .is_ok()
+    }
+
+    fn center(&self) {
+        let _ = self.window.center();
+    }
+
+    fn show(&self) {
+        let _ = self.window.show();
+    }
+}
+
+fn restore_window(window: &impl RestoreWindow, saved: Option<Dimensions>) {
+    if let Some(size) = saved.map(|saved| clamp_dimensions(saved, window.work_area_limit())) {
+        if window.set_size(size) {
+            window.center();
+        }
+    }
+    // Showing is unconditional: a missing/corrupt size file, a monitor lookup
+    // failure or a rejected resize must never leave the hidden window stuck.
+    window.show();
 }
 
 /// Track normal sizes and flush when the main window closes or the app exits.
@@ -245,6 +303,151 @@ fn clamp_dimension(value: u32, minimum: u32, maximum: Option<u32>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum RestoreCall {
+        SetSize(Dimensions),
+        Center,
+        Show,
+    }
+
+    struct FakeRestoreWindow {
+        limit: Option<Dimensions>,
+        resize_ok: bool,
+        calls: RefCell<Vec<RestoreCall>>,
+    }
+
+    impl FakeRestoreWindow {
+        fn new(limit: Option<Dimensions>, resize_ok: bool) -> Self {
+            Self {
+                limit,
+                resize_ok,
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<RestoreCall> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl RestoreWindow for FakeRestoreWindow {
+        fn work_area_limit(&self) -> Option<Dimensions> {
+            self.limit
+        }
+
+        fn set_size(&self, size: Dimensions) -> bool {
+            self.calls.borrow_mut().push(RestoreCall::SetSize(size));
+            self.resize_ok
+        }
+
+        fn center(&self) {
+            self.calls.borrow_mut().push(RestoreCall::Center);
+        }
+
+        fn show(&self) {
+            self.calls.borrow_mut().push(RestoreCall::Show);
+        }
+    }
+
+    #[test]
+    fn restore_applies_the_clamped_size_centers_and_then_shows() {
+        let window = FakeRestoreWindow::new(
+            Some(Dimensions {
+                width: 1280,
+                height: 720,
+            }),
+            true,
+        );
+        restore_window(
+            &window,
+            Some(Dimensions {
+                width: 2000,
+                height: 1200,
+            }),
+        );
+        assert_eq!(
+            window.calls(),
+            vec![
+                RestoreCall::SetSize(Dimensions {
+                    width: 1280,
+                    height: 720,
+                }),
+                RestoreCall::Center,
+                RestoreCall::Show,
+            ]
+        );
+    }
+
+    #[test]
+    fn restore_still_shows_when_there_is_no_saved_size() {
+        let window = FakeRestoreWindow::new(None, true);
+        restore_window(&window, None);
+        assert_eq!(window.calls(), vec![RestoreCall::Show]);
+    }
+
+    #[test]
+    fn restore_still_shows_when_applying_the_saved_size_fails() {
+        let window = FakeRestoreWindow::new(None, false);
+        restore_window(
+            &window,
+            Some(Dimensions {
+                width: 1200,
+                height: 800,
+            }),
+        );
+        assert_eq!(
+            window.calls(),
+            vec![
+                RestoreCall::SetSize(Dimensions {
+                    width: 1200,
+                    height: 800,
+                }),
+                RestoreCall::Show,
+            ]
+        );
+    }
+
+    #[test]
+    fn desktop_configs_create_the_main_window_hidden_for_restore() {
+        for raw in [
+            include_str!("../tauri.conf.json"),
+            include_str!("../tauri.ai.conf.json"),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(raw).unwrap();
+            assert_eq!(config["app"]["windows"][0]["visible"], false);
+        }
+    }
+
+    #[test]
+    fn core_overlays_do_not_override_the_hidden_main_window() {
+        // Windows Core and Linux Core add build/bundle settings only; the base
+        // tauri.conf.json keeps the window hidden until restore() shows it.
+        for raw in [
+            include_str!("../tauri.core.conf.json"),
+            include_str!("../tauri.linux-core.conf.json"),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(raw).unwrap();
+            assert!(config
+                .get("app")
+                .and_then(|app| app.get("windows"))
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn startup_background_matches_the_system_theme() {
+        assert_eq!(startup_background(true), Color(30, 30, 30, 255));
+        assert_eq!(startup_background(false), Color(255, 255, 255, 255));
+    }
+
+    #[test]
+    fn android_config_keeps_its_main_window_visible() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.android.conf.json")).unwrap();
+        assert_eq!(config["app"]["windows"][0]["visible"], true);
+    }
 
     #[test]
     fn stored_size_has_only_the_version_and_dimensions() {
