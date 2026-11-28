@@ -64,7 +64,7 @@
   ${If} $UpdateMode <> 1
     IfSilent selis_keep_app_data
     MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 \
-      "是否同时删除 SeLis 的阅读数据？$\r$\n$\r$\n书架、阅读进度、笔记、书签、阅读来信、设置和字体都会被删除，且无法恢复。$\r$\n$\r$\nDelete SeLis reading data as well?$\r$\nShelf, progress, notes, bookmarks, reading letters, settings and fonts will be removed permanently." \
+      "是否同时删除 SeLis 的阅读数据？$\r$\n$\r$\n书架、阅读进度、笔记、书签、设置和字体都会被删除，且无法恢复。$\r$\n$\r$\nDelete SeLis reading data as well?$\r$\nShelf, progress, notes, bookmarks, settings and fonts will be removed permanently." \
       IDNO selis_keep_app_data
     RMDir /r "$APPDATA\${BUNDLEID}"
     RMDir /r "$LOCALAPPDATA\${BUNDLEID}"
