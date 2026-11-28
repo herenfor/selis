@@ -262,4 +262,82 @@ describe("reader foreground host extraction", () => {
       expect(t.current().sidebar.autoCollapsed).toBe(true);
     } finally { await t.dom.dispose(); }
   });
+
+  it("slides out without engaging singlePageLock when drag-collapsing a docked sidebar", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    try {
+      await t.render({ viewportWidth: 1280, effectiveColumns: 2 });
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(true);
+      expect(t.current().sidebar.singlePageLock).toBe(false);
+
+      await t.dom.run(() => t.current().sidebar.requestDockCollapse());
+      expect(t.current().sidebar.dockExiting).toBe(true);
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+      expect(t.current().sidebar.singlePageLock).toBe(false);
+      expect(t.current().sidebar.isDockedSidebar).toBe(true);
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(false);
+      expect(t.current().sidebar.isSidebarOpen).toBe(false);
+
+      await t.dom.run(() => {
+        vi.advanceTimersByTime(320);
+      });
+      expect(t.current().sidebar.dockExiting).toBe(false);
+      expect(t.current().sidebar.autoCollapsed).toBe(false);
+      expect(t.current().sidebar.singlePageLock).toBe(false);
+      expect(t.current().sidebar.isDockedSidebar).toBe(false);
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(false);
+    } finally {
+      await t.dom.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("handles mid-exit reopen, unrelated foreground panels, and view leave cleanly", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    try {
+      // 1. Re-toggling sidebar mid-exit cancels the timer and stays docked.
+      await t.render({ viewportWidth: 1280, effectiveColumns: 2 });
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      await t.dom.run(() => t.current().sidebar.requestDockCollapse());
+      await t.dom.run(() => {
+        vi.advanceTimersByTime(100);
+      });
+      await t.dom.run(() => t.current().sidebar.handleToggleSidebar("left"));
+      expect(t.current().sidebar.dockExiting).toBe(false);
+      expect(t.current().sidebar.effectiveSidebarMode).toBe("docked");
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(true);
+      await t.dom.run(() => {
+        vi.advanceTimersByTime(320);
+      });
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(true);
+
+      // 2. Opening search during slide-out is not dismissed when the 320ms timer finishes.
+      await t.dom.run(() => t.current().sidebar.requestDockCollapse());
+      await t.dom.run(() => t.current().commands.openPanel("search"));
+      expect(t.current().foreground).toEqual({ kind: "panel", panel: "search" });
+      await t.dom.run(() => {
+        vi.advanceTimersByTime(320);
+      });
+      expect(t.current().sidebar.dockExiting).toBe(false);
+      expect(t.current().sidebar.isDockedSidebar).toBe(false);
+      expect(t.current().foreground).toEqual({ kind: "panel", panel: "search" });
+
+      // 3. Leaving reader mid-exit clears the pin so returning does not resurrect it.
+      await t.dom.run(() => t.current().commands.closeForeground());
+      await t.dom.run(() => t.current().sidebar.handleSidebarModeChange("docked"));
+      await t.dom.run(() => t.current().sidebar.requestDockCollapse());
+      expect(t.current().sidebar.dockExiting).toBe(true);
+      await t.render({ view: "shelf" });
+      await t.render({ view: "reader" });
+      expect(t.current().sidebar.dockExiting).toBe(false);
+      expect(t.current().sidebar.isDockedSidebar).toBe(false);
+      expect(t.current().sidebar.isDockedSidebarVisible).toBe(false);
+    } finally {
+      await t.dom.dispose();
+      vi.useRealTimers();
+    }
+  });
 });

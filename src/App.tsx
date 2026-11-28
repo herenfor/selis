@@ -754,7 +754,7 @@ export default function App() {
   const {
     sidebarSide, sidebarNavigationMemory, effectiveSidebarMode,
     isSidebarOpen, activeSidebarTab, isDockedSidebar, isDockedSidebarVisible, isDockedSearch,
-    sidebarWidth, setSidebarWidth, autoCollapsed, singlePageLock, finishDockRestore, requestDockCollapse,
+    sidebarWidth, setSidebarWidth, autoCollapsed, dockExiting, singlePageLock, finishDockRestore, requestDockCollapse,
     handleSidebarTabChange, handleSidebarModeChange, handleSidebarClose,
     requestCloseCurrentSurface, handleToggleSidebar, handleOpenBookmarks,
   } = useReaderSidebar({
@@ -2741,7 +2741,7 @@ export default function App() {
           onClose={handleSidebarClose}
           compact={phoneChrome}
           canDock={canDockSidebar}
-          autoCollapsed={autoCollapsed && isDockedSidebar}
+          autoCollapsed={(autoCollapsed || dockExiting) && isDockedSidebar}
           resizable={canResizeSidebar}
           dockWidth={sidebarWidth}
           onResizeStart={handleDockResizeStart}
