@@ -35,6 +35,29 @@ export const RELEASES_PAGE_URL = "https://github.com/herenfor/selis/releases";
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.4.10",
+    status: "released",
+    releasedOn: "2026-11-28",
+    items: [
+      {
+        category: "improved",
+        text: "Windows 安装向导支持简体中文和英文，自动跟随系统语言，并更新了安装向导的页眉/侧栏视觉。",
+      },
+      {
+        category: "improved",
+        text: "卸载时新增“是否同时删除应用数据”的询问，默认保留；确认后会删除书架、阅读进度、笔记、书签、设置和字体等本机数据。应用内更新和静默卸载不会删除数据。",
+      },
+      {
+        category: "fixed",
+        text: "Windows 启动时窗口不再先以默认尺寸出现再跳到记忆尺寸，启动过程不再闪烁；深色模式下首帧也不再闪白底。",
+      },
+      {
+        category: "fixed",
+        text: "双页模式下拖动目录内缘缩窄收起时，不再短暂闪现单页画面；收起动画期间重新打开目录、切换面板或离开阅读器也保持正确状态。",
+      },
+    ],
+  },
+  {
     version: "0.4.9",
     status: "released",
     releasedOn: "2026-11-26",
